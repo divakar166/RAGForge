@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from app.core.config import settings
+from app.monitoring.tracing import observe
 from app.rag.llm import LLMClient
 from app.rag.retrieval import RetrievalResult
 
@@ -33,6 +35,7 @@ def build_messages(query: str, context: str) -> list[dict[str, str]]:
     ]
 
 
+@observe(name="generate_answer")
 async def generate_answer(
     query: str,
     results: list[RetrievalResult],
@@ -62,9 +65,19 @@ async def generate_answer(
         for r in results
     ]
 
+    # Capture Langfuse trace ID for feedback
+    trace_id = None
+    if settings.LANGFUSE_ENABLED:
+        try:
+            from langfuse.decorators import langfuse_context
+            trace_id = langfuse_context.get_current_trace_id()
+        except Exception:
+            pass
+
     return {
         "query": query,
         "answer": answer,
         "citations": citations,
         "model": client.model,
+        "trace_id": trace_id,
     }

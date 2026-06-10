@@ -22,6 +22,7 @@ DEFAULT_PERMISSIONS = [
     {"codename": "users:manage", "name": "Manage Users", "resource_type": "users", "action": "manage"},
     {"codename": "roles:manage", "name": "Manage Roles", "resource_type": "roles", "action": "manage"},
     {"codename": "admin:full", "name": "Full Admin Access", "resource_type": "admin", "action": "*"},
+    {"codename": "evaluate:run", "name": "Run Evaluations", "resource_type": "evaluate", "action": "run"},
 ]
 
 ROLES_CONFIG = {

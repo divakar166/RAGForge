@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.rag.embeddings import TEIEmbeddingProvider
 from app.rag.generation import generate_answer
 from app.rag.retrieval import RetrievalPipeline
-from app.schemas.search import ChunkResult, RAGRequest, RAGResponse, SearchRequest, SearchResponse
+from app.schemas.search import ChunkResult, FeedbackRequest, RAGRequest, RAGResponse, SearchRequest, SearchResponse
 from app.services.audit import log_action
 from app.services.rbac import has_any_permission
 
@@ -92,7 +92,10 @@ async def ask(
     answer = await generate_answer(req.query, results)
     await log_action(db, str(user.id), "search:ask", details={"query": req.query, "top_k": req.top_k})
 
-    return RAGResponse(**answer)
+    trace_id = answer.pop("trace_id", None)
+    resp = RAGResponse(**answer)
+    resp.trace_id = trace_id
+    return resp
 
 
 @router.get("/history")
@@ -119,3 +122,29 @@ async def search_history(
         }
         for log in logs
     ]
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    req: FeedbackRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit user feedback (thumbs up/down) for a RAG response trace."""
+    from app.monitoring.tracing import score_trace
+
+    score_trace(
+        trace_id=req.trace_id,
+        name="user_satisfaction",
+        value=req.score,
+        data_type="BOOLEAN",
+    )
+
+    await log_action(
+        db,
+        str(user.id),
+        "search:feedback",
+        details={"trace_id": req.trace_id, "score": req.score, "comment": req.comment},
+    )
+
+    return {"status": "ok"}

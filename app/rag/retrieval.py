@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app.core.config import settings
+from app.monitoring.tracing import observe
 from app.rag.embeddings import TEIEmbeddingProvider
 from app.rag.reranker import Reranker
 from app.rag.sparse import BM25SparseEncoder
@@ -38,6 +39,7 @@ class RetrievalPipeline:
         self.vector_store = vector_store or QdrantStore()
         self.reranker = reranker or Reranker()
 
+    @observe(name="retrieval_pipeline_search")
     async def search(
         self,
         query: str,

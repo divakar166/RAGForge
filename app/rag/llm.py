@@ -1,4 +1,4 @@
-"""OpenAI-compatible LLM client using httpx."""
+"""OpenAI-compatible LLM client using httpx with Langfuse tracing."""
 
 import json
 import logging
@@ -7,6 +7,7 @@ from typing import Any, AsyncGenerator
 import httpx
 
 from app.core.config import settings
+from app.monitoring.tracing import get_langfuse, observe
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class LLMClient:
     """HTTP client for any OpenAI-compatible LLM API.
 
     Works with: OpenAI, vLLM, Ollama, Modal, Azure OpenAI, etc.
+    Supports Langfuse tracing for generation observability.
     """
 
     def __init__(
@@ -31,6 +33,7 @@ class LLMClient:
         self.max_tokens = max_tokens or settings.LLM_MAX_TOKENS
         self.temperature = temperature if temperature > 0 else settings.LLM_TEMPERATURE
 
+    @observe(name="llm_generate")
     async def generate(
         self,
         messages: list[dict[str, str]],
@@ -48,6 +51,19 @@ class LLMClient:
             "stream": stream,
         }
 
+        # Report LLM usage to Langfuse via the generation observation
+        lf = get_langfuse()
+        if lf is not None:
+            try:
+                from langfuse.decorators import langfuse_context
+                langfuse_context.update_current_observation(
+                    input=messages,
+                    model=self.model,
+                    model_parameters={"max_tokens": self.max_tokens, "temperature": self.temperature},
+                )
+            except Exception:
+                pass
+
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{self.base_url}/chat/completions",
@@ -55,7 +71,24 @@ class LLMClient:
                 json=body,
             )
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+
+            # Report output + token usage to Langfuse
+            if lf is not None:
+                try:
+                    usage = data.get("usage", {})
+                    langfuse_context.update_current_observation(
+                        output=data.get("choices", [{}])[0].get("message", {}).get("content", ""),
+                        usage={
+                            "input": usage.get("prompt_tokens", 0),
+                            "output": usage.get("completion_tokens", 0),
+                            "unit": "TOKENS",
+                        },
+                    )
+                except Exception:
+                    pass
+
+            return data
 
     async def generate_stream(
         self,

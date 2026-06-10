@@ -1,0 +1,37 @@
+[
+  {
+    "question": "What is RAGForge and what does it do?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "RAGForge is a production-grade RAG system with RBAC for resume showcase.",
+    "metadata": {"category": "general"}
+  },
+  {
+    "question": "What vector database does RAGForge use?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "Qdrant is used as the vector database, supporting both dense and sparse vectors.",
+    "metadata": {"category": "architecture"}
+  },
+  {
+    "question": "How does RAGForge handle access control?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "RAGForge uses defense-in-depth RBAC with pre-filter at Qdrant, post-filter at service layer, and full audit trail.",
+    "metadata": {"category": "security"}
+  },
+  {
+    "question": "What chunking strategies are available?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "RAGForge supports recursive chunking (structure-aware) and semantic chunking (embedding-similarity breakpoints).",
+    "metadata": {"category": "rag"}
+  },
+  {
+    "question": "How does RAGForge perform hybrid search?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "RAGForge uses dense embeddings from TEI and sparse vectors from rank_bm25, fused with Reciprocal Rank Fusion (RRF).",
+    "metadata": {"category": "rag"}
+  }
+]

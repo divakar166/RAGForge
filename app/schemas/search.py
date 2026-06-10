@@ -31,3 +31,10 @@ class RAGResponse(BaseModel):
     answer: str
     citations: list[ChunkResult]
     model: str
+    trace_id: str | None = None
+
+
+class FeedbackRequest(BaseModel):
+    trace_id: str = Field(min_length=1)
+    score: int = Field(default=1, ge=0, le=1, description="0 (thumbs down) or 1 (thumbs up)")
+    comment: str = ""
