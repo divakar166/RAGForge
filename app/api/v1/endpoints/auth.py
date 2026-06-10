@@ -8,6 +8,7 @@ from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    RoleBrief,
     TokenResponse,
     UserResponse,
 )
@@ -22,14 +23,18 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     try:
         user = await auth_service.register_user(db, req)
         await log_action(db, str(user.id), "auth:register", "user", str(user.id))
-        return {"id": str(user.id), "email": user.email, "username": user.username}
+        tokens = await auth_service.login(db, req.full_name, req.password)
+        if tokens:
+            return {"id": str(user.id), "email": user.email, **tokens}
+        return {"id": str(user.id), "email": user.email, "full_name": req.full_name}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db), request: Request = None):
-    result = await auth_service.login(db, req.username, req.password)
+    username = req.username or req.email
+    result = await auth_service.login(db, username, req.password)
     if not result:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     await log_action(db, None, "auth:login", ip_address=request.client.host if request else None)
@@ -49,8 +54,10 @@ async def me(user: User = Depends(get_current_user)):
     return UserResponse(
         id=str(user.id),
         email=user.email,
-        username=user.username,
+        full_name=user.username,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
-        roles=[r.name for r in user.roles],
+        roles=[RoleBrief(id=str(r.id), name=r.name, permissions=[p.codename for p in r.permissions]) for r in user.roles],
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )

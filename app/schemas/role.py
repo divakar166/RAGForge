@@ -34,7 +34,9 @@ class RoleResponse(BaseModel):
     name: str
     description: str | None = None
     is_system_role: bool
-    permissions: list[PermissionResponse] = []
+    permissions: list[str] = []  # codename strings for frontend compat
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class AssignRolesRequest(BaseModel):

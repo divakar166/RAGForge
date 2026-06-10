@@ -1,14 +1,19 @@
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    username: str = Field(min_length=3, max_length=64)
+    full_name: str = Field(min_length=3, max_length=64, alias="username")
     password: str = Field(min_length=8, max_length=128)
+
+    model_config = {"populate_by_name": True}
 
 
 class LoginRequest(BaseModel):
-    username: str
+    username: str = ""
+    email: str = ""
     password: str
 
 
@@ -22,14 +27,18 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class RoleBrief(BaseModel):
+    id: str
+    name: str
+    permissions: list[str] = []
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
-    username: str
+    full_name: str
     is_active: bool
     is_superuser: bool
-    roles: list[str] = []
-
-
-class UserDetailResponse(UserResponse):
-    pass
+    roles: list[RoleBrief] = []
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

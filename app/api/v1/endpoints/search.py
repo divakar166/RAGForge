@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.rag.embeddings import TEIEmbeddingProvider
 from app.rag.generation import generate_answer
 from app.rag.retrieval import RetrievalPipeline
-from app.schemas.search import ChunkResult, FeedbackRequest, RAGRequest, RAGResponse, SearchRequest, SearchResponse
+from app.schemas.search import FeedbackRequest, RAGRequest, RAGResponse, SearchRequest, SearchResponse, SearchResultItem
 from app.services.audit import log_action
 from app.services.rbac import has_any_permission
 
@@ -47,20 +47,20 @@ async def search(
         details={"query": req.query, "top_k": req.top_k, "results": len(results)},
     )
 
-    return SearchResponse(
-        query=req.query,
-        results=[
-            ChunkResult(
-                content=r.content,
-                score=r.score,
-                document_id=r.document_id,
-                doc_title=r.doc_title,
-                chunk_index=r.chunk_index,
-                section_path=r.section_path,
-            )
-            for r in results
-        ],
-    )
+    items = [
+        SearchResultItem(
+            score=r.score,
+            text=r.content,
+            content=r.content,
+            document_id=r.document_id,
+            document_filename=r.doc_title,
+            doc_title=r.doc_title,
+            chunk_index=r.chunk_index,
+            section_path=r.section_path,
+        )
+        for r in results
+    ]
+    return SearchResponse(query=req.query, results=items, total=len(items))
 
 
 @router.post("/ask")
@@ -95,6 +95,17 @@ async def ask(
     trace_id = answer.pop("trace_id", None)
     resp = RAGResponse(**answer)
     resp.trace_id = trace_id
+    resp.citations = [
+        SearchResultItem(
+            score=c.get("score", 0),
+            text=c.get("content", ""),
+            content=c.get("content", ""),
+            document_id=c.get("document_id", ""),
+            document_filename=c.get("doc_title", ""),
+            doc_title=c.get("doc_title", ""),
+        )
+        for c in resp.citations
+    ]
     return resp
 
 
@@ -116,9 +127,9 @@ async def search_history(
     return [
         {
             "id": str(log.id),
-            "action": log.action,
+            "type": "ask" if log.action == "search:ask" else "search",
             "query": (log.details or {}).get("query", ""),
-            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "created_at": log.timestamp.isoformat() if log.timestamp else None,
         }
         for log in logs
     ]
@@ -133,10 +144,11 @@ async def submit_feedback(
     """Submit user feedback (thumbs up/down) for a RAG response trace."""
     from app.monitoring.tracing import score_trace
 
+    score_val = 1 if req.score in ("thumbs_up", 1, "1") else 0 if req.score in ("thumbs_down", 0, "0") else int(req.score)
     score_trace(
         trace_id=req.trace_id,
         name="user_satisfaction",
-        value=req.score,
+        value=score_val,
         data_type="BOOLEAN",
     )
 
@@ -144,7 +156,7 @@ async def submit_feedback(
         db,
         str(user.id),
         "search:feedback",
-        details={"trace_id": req.trace_id, "score": req.score, "comment": req.comment},
+        details={"trace_id": req.trace_id, "score": score_val, "comment": req.comment},
     )
 
     return {"status": "ok"}

@@ -26,7 +26,7 @@ async def register_user(db: AsyncSession, req: RegisterRequest) -> User:
 
     user = User(
         email=req.email,
-        username=req.username,
+        username=req.full_name,
         hashed_password=hash_password(req.password),
     )
 

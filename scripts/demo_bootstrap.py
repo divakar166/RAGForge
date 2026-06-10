@@ -681,13 +681,17 @@ async def run_migrations():
 
 async def seed_roles_and_permissions(db):
     """Seed roles (admin, editor, viewer) and all permissions."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
     from app.db.models.permission import Permission
     from app.db.models.role import Role
 
     existing = await db.execute(Role.__table__.select().limit(1))
     if existing.fetchone():
-        logger.info("Roles already seeded, skipping.")
-        return
+        logger.info("Roles already seeded, re-fetching.")
+        result = await db.execute(select(Role).options(selectinload(Role.permissions)))
+        roles_map = {r.name: r for r in result.scalars().all()}
+        return roles_map
 
     DEFAULT_PERMISSIONS = [
         {"codename": "document:create", "name": "Create Documents", "resource_type": "document", "action": "create"},
@@ -800,8 +804,16 @@ async def create_demo_users(db, roles_map):
 
 
 async def ingest_demo_documents(db, upload_dir: str):
-    """Generate synthetic documents, ingest via RAG pipeline (sync)."""
+    """Generate synthetic documents, ingest via RAG pipeline (sync).
+
+    Distributes documents across different users to demonstrate RBAC:
+    - admin: owns 2 private docs (Senior Engineer Resume, RAG Architecture Guide)
+    - editor: owns 1 doc (Distributed Systems Blog) shared with viewer role
+    - viewer: owns 1 doc (ML Lead JD) shared with editor role
+    """
     from app.db.models.document import Document
+    from app.db.models.role import Role
+    from app.db.models.user import User
     from app.rag.chunking.pipeline import ChunkingPipeline
     from app.rag.parser import parse_document
     from app.rag.sparse import BM25SparseEncoder
@@ -811,20 +823,41 @@ async def ingest_demo_documents(db, upload_dir: str):
 
     os.makedirs(upload_dir, exist_ok=True)
 
-    # Get admin user as owner
-    from app.db.models.user import User
-    result = await db.execute(User.__table__.select().where(User.username == "admin"))
-    admin_row = result.fetchone()
-    if not admin_row:
-        logger.error("Admin user not found; cannot ingest documents.")
-        return []
-    admin_id = str(admin_row[0])
-    logger.info("Using admin user (id=%s) as document owner.", admin_id)
+    # Fetch users and roles for RBAC config
+    users_result = await db.execute(User.__table__.select())
+    user_rows = users_result.fetchall()
+    col_names = [c.name for c in User.__table__.columns]
+    users_map = {row.username: str(row[col_names.index("id")]) for row in user_rows}
+
+    roles_result = await db.execute(Role.__table__.select())
+    role_rows = roles_result.fetchall()
+    role_col_names = [c.name for c in Role.__table__.columns]
+    roles_map = {row.name: str(row[role_col_names.index("id")]) for row in role_rows}
+
+    logger.info("Users: %s", users_map)
+    logger.info("Roles: %s", roles_map)
+
+    # Document ownership & RBAC config per document
+    DOC_OWNERSHIP = [
+        {"owner": "admin", "is_public": False, "allowed_role_ids": [], "allowed_user_ids": []},
+        {"owner": "admin", "is_public": False, "allowed_role_ids": [], "allowed_user_ids": []},
+        {"owner": "editor", "is_public": False, "allowed_role_ids": [roles_map.get("viewer")] if roles_map.get("viewer") else [], "allowed_user_ids": []},
+        {"owner": "viewer", "is_public": False, "allowed_role_ids": [roles_map.get("editor")] if roles_map.get("editor") else [], "allowed_user_ids": []},
+        {"owner": "admin", "is_public": True,  "allowed_role_ids": [], "allowed_user_ids": []},
+        {"owner": "editor", "is_public": True,  "allowed_role_ids": [], "allowed_user_ids": []},
+        {"owner": "viewer", "is_public": True,  "allowed_role_ids": [], "allowed_user_ids": []},
+    ]
 
     store = QdrantStore()
     ingested = []
 
-    for doc_def in DEMO_DOCUMENTS:
+    for idx, doc_def in enumerate(DEMO_DOCUMENTS):
+        owner_cfg = DOC_OWNERSHIP[idx]
+        owner_id = users_map.get(owner_cfg["owner"])
+        if not owner_id:
+            logger.warning("Owner '%s' not found, skipping %s", owner_cfg["owner"], doc_def["title"])
+            continue
+
         file_path = os.path.join(upload_dir, doc_def["file_name"])
         with open(file_path, "w") as f:
             f.write(doc_def["content"])
@@ -842,13 +875,13 @@ async def ingest_demo_documents(db, upload_dir: str):
             file_type="md",
             file_size=len(doc_def["content"]),
             status="processing",
-            owner_id=admin_id,
-            is_public=True,
+            owner_id=owner_id,
+            is_public=owner_cfg["is_public"],
         )
         db.add(doc)
         await db.flush()
         doc_id = str(doc.id)
-        logger.info("Created document record: %s (%s)", doc_def["title"], doc_id)
+        logger.info("Created document record: %s (%s) — owner=%s", doc_def["title"], doc_id, owner_cfg["owner"])
 
         # Parse
         text = parse_document(file_path)
@@ -884,7 +917,7 @@ async def ingest_demo_documents(db, upload_dir: str):
         sparse_encoder.fit(chunk_texts)
         all_sparse = [sparse_encoder.encode(t) for t in chunk_texts]
 
-        # Build Qdrant points
+        # Build Qdrant points with RBAC payload
         points = []
         for j, chunk in enumerate(chunks):
             sparse_indices, sparse_values = all_sparse[j]
@@ -901,10 +934,10 @@ async def ingest_demo_documents(db, upload_dir: str):
                     "section_path": chunk.section_path or "",
                     "strategy": chunk.strategy,
                     "content": chunk.content,
-                    "owner_id": admin_id,
-                    "is_public": True,
-                    "allowed_role_ids": [],
-                    "allowed_user_ids": [],
+                    "owner_id": owner_id,
+                    "is_public": owner_cfg["is_public"],
+                    "allowed_role_ids": owner_cfg["allowed_role_ids"],
+                    "allowed_user_ids": owner_cfg["allowed_user_ids"],
                 },
             )
             points.append(point)
@@ -916,7 +949,7 @@ async def ingest_demo_documents(db, upload_dir: str):
 
         doc.status = "indexed"
         await db.commit()
-        ingested.append({"id": doc_id, "title": doc_def["title"], "chunks": len(points)})
+        ingested.append({"id": doc_id, "title": doc_def["title"], "chunks": len(points), "owner": owner_cfg["owner"]})
         logger.info("  Indexed %d points to Qdrant.", len(points))
 
     return ingested

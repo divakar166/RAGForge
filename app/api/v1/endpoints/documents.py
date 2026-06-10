@@ -11,7 +11,7 @@ from app.core.deps import get_current_user
 from app.db.models.document import Document
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.document import DocumentAccessRequest, DocumentResponse
+from app.schemas.document import DocumentAccessRequest, DocumentResponse, PaginatedDocumentResponse
 from app.services.audit import log_action
 from app.services.rbac import has_any_permission
 
@@ -78,43 +78,72 @@ async def upload_document(
     except Exception as e:
         logger.warning("Failed to dispatch Celery task: %s", e)
 
-    return {
-        "id": str(doc.id),
-        "title": doc.title,
-        "status": doc.status,
-        "detail": "Document queued for processing",
-    }
+    return DocumentResponse(
+        id=str(doc.id),
+        title=doc.title,
+        filename=doc.title,
+        file_type=doc.file_type,
+        file_size=doc.file_size,
+        status=doc.status,
+        is_public=doc.is_public,
+        owner_id=str(doc.owner_id),
+        allowed_role_ids=[],
+        allowed_user_ids=[],
+        chunk_count=0,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    )
 
 
 @router.get("")
 async def list_documents(
+    page: int = 1,
+    per_page: int = 20,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     # RBAC: admins see all, others see their own + public documents
     if user.is_superuser:
-        result = await db.execute(select(Document).order_by(Document.created_at.desc()))
+        result = await db.execute(
+            select(Document).order_by(Document.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+        )
+        total_result = await db.execute(select(Document))
     else:
         result = await db.execute(
             select(Document)
             .where((Document.owner_id == str(user.id)) | Document.is_public)
             .order_by(Document.created_at.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        )
+        total_result = await db.execute(
+            select(Document).where((Document.owner_id == str(user.id)) | Document.is_public)
         )
     docs = result.scalars().all()
-    return [
-        DocumentResponse(
-            id=str(d.id),
-            title=d.title,
-            file_type=d.file_type,
-            file_size=d.file_size,
-            status=d.status,
-            is_public=d.is_public,
-            owner_id=d.owner_id,
-            created_at=d.created_at,
-            updated_at=d.updated_at,
-        )
-        for d in docs
-    ]
+    total = len(total_result.scalars().all())
+    return PaginatedDocumentResponse(
+        items=[
+            DocumentResponse(
+                id=str(d.id),
+                title=d.title,
+                filename=d.title,
+                file_type=d.file_type,
+                file_size=d.file_size,
+                status=d.status,
+                is_public=d.is_public,
+                owner_id=d.owner_id,
+                allowed_role_ids=[],
+                allowed_user_ids=[],
+                chunk_count=0,
+                created_at=d.created_at,
+                updated_at=d.updated_at,
+            )
+            for d in docs
+        ],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.get("/{document_id}")
@@ -139,11 +168,15 @@ async def get_document(
     return DocumentResponse(
         id=str(doc.id),
         title=doc.title,
+        filename=doc.title,
         file_type=doc.file_type,
         file_size=doc.file_size,
         status=doc.status,
         is_public=doc.is_public,
         owner_id=doc.owner_id,
+        allowed_role_ids=[],
+        allowed_user_ids=[],
+        chunk_count=0,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
     )

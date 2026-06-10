@@ -12,6 +12,8 @@ import {
   BarChart3,
   LogOut,
   Menu,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth-context";
+import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -116,6 +119,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { user, loading, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -157,6 +161,14 @@ export default function DashboardLayout({
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 items-center justify-end gap-4 border-b bg-card px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label="Toggle dark mode"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={

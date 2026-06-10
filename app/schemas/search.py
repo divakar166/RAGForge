@@ -1,3 +1,5 @@
+import uuid
+
 from pydantic import BaseModel, Field
 
 
@@ -12,29 +14,34 @@ class RAGRequest(BaseModel):
     stream: bool = False
 
 
-class ChunkResult(BaseModel):
-    content: str
+class SearchResultItem(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     score: float
+    text: str
+    content: str = ""
     document_id: str
-    doc_title: str
-    chunk_index: int
+    document_filename: str
+    doc_title: str = ""
+    metadata: dict = {}
+    chunk_index: int = 0
     section_path: str | None = None
 
 
 class SearchResponse(BaseModel):
     query: str
-    results: list[ChunkResult]
+    results: list[SearchResultItem]
+    total: int = 0
 
 
 class RAGResponse(BaseModel):
     query: str
     answer: str
-    citations: list[ChunkResult]
+    citations: list[SearchResultItem]
     model: str
     trace_id: str | None = None
 
 
 class FeedbackRequest(BaseModel):
     trace_id: str = Field(min_length=1)
-    score: int = Field(default=1, ge=0, le=1, description="0 (thumbs down) or 1 (thumbs up)")
+    score: int | str = Field(default=1, description="0/1 or 'thumbs_up'/'thumbs_down'")
     comment: str = ""

@@ -27,17 +27,9 @@ async def list_roles(
             name=r.name,
             description=r.description,
             is_system_role=r.is_system_role,
-            permissions=[
-                PermissionResponse(
-                    id=str(p.id),
-                    codename=p.codename,
-                    name=p.name,
-                    description=p.description,
-                    resource_type=p.resource_type,
-                    action=p.action,
-                )
-                for p in r.permissions
-            ],
+            permissions=[p.codename for p in r.permissions],
+            created_at=r.created_at.isoformat() if r.created_at else None,
+            updated_at=r.updated_at.isoformat() if r.updated_at else None,
         )
         for r in roles
     ]
@@ -56,17 +48,9 @@ async def create_role(
         name=role.name,
         description=role.description,
         is_system_role=role.is_system_role,
-        permissions=[
-            PermissionResponse(
-                id=str(p.id),
-                codename=p.codename,
-                name=p.name,
-                description=p.description,
-                resource_type=p.resource_type,
-                action=p.action,
-            )
-            for p in role.permissions
-        ],
+        permissions=[p.codename for p in role.permissions],
+        created_at=role.created_at.isoformat() if role.created_at else None,
+        updated_at=role.updated_at.isoformat() if role.updated_at else None,
     )
 
 

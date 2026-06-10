@@ -27,20 +27,15 @@ async def run_evaluation(
 
     report = await compute_ragas_metrics(samples)
 
-    return {
-        "passed": report.passed,
-        "aggregate": report.aggregate,
-        "thresholds": report.thresholds,
-        "num_samples": len(samples),
-        "per_sample": [
-            {
-                "question": r.sample.question[:100],
-                "scores": r.scores,
-                "passed": r.passed,
-            }
-            for r in report.results
-        ],
-    }
+    return [
+        {
+            "metric": name,
+            "score": report.aggregate.get(name, 0),
+            "threshold": report.thresholds.get(name, 0),
+            "passed": report.aggregate.get(name, 0) >= report.thresholds.get(name, 0),
+        }
+        for name in report.aggregate
+    ]
 
 
 @router.get("/dataset")
@@ -50,13 +45,6 @@ async def get_dataset_info(
     """Get info about the current golden dataset."""
     samples = load_golden_dataset("data/golden_dataset.json")
     return {
-        "num_samples": len(samples),
-        "samples": [
-            {
-                "question": s.question[:200],
-                "has_ground_truth": bool(s.ground_truth),
-                "num_contexts": len(s.contexts),
-            }
-            for s in samples
-        ],
+        "name": "Golden Dataset",
+        "size": len(samples),
     }

@@ -9,7 +9,7 @@ from app.core.deps import get_current_admin
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.role import AssignRolesRequest
-from app.schemas.user import UserResponse, UserUpdate
+from app.schemas.user import RoleBrief, UserResponse, UserUpdate
 from app.services.audit import log_action
 from app.services.rbac import assign_roles
 
@@ -27,10 +27,12 @@ async def list_users(
         UserResponse(
             id=str(u.id),
             email=u.email,
-            username=u.username,
+            full_name=u.username,
             is_active=u.is_active,
             is_superuser=u.is_superuser,
-            roles=[r.name for r in u.roles],
+            roles=[RoleBrief(id=str(r.id), name=r.name, permissions=[p.codename for p in r.permissions]) for r in u.roles],
+            created_at=u.created_at,
+            updated_at=u.updated_at,
         )
         for u in users
     ]
@@ -52,10 +54,12 @@ async def get_user(
     return UserResponse(
         id=str(user.id),
         email=user.email,
-        username=user.username,
+        full_name=user.username,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
-        roles=[r.name for r in user.roles],
+        roles=[RoleBrief(id=str(r.id), name=r.name, permissions=[p.codename for p in r.permissions]) for r in user.roles],
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )
 
 
@@ -104,8 +108,10 @@ async def assign_user_roles(
     return UserResponse(
         id=str(user.id),
         email=user.email,
-        username=user.username,
+        full_name=user.username,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
-        roles=[r.name for r in user.roles],
+        roles=[RoleBrief(id=str(r.id), name=r.name, permissions=[p.codename for p in r.permissions]) for r in user.roles],
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )
