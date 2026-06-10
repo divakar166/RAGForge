@@ -3,6 +3,7 @@
 Wraps retrieval, LLM calls, and generation with @observe decorators
 for full observability in Langfuse.
 """
+
 import logging
 from typing import Any
 
@@ -41,6 +42,7 @@ def observe(name: str | None = None, **kwargs) -> Any:
 
     try:
         from langfuse.decorators import observe as langfuse_observe
+
         return langfuse_observe(name=name, **kwargs)
     except ImportError:
         return _noop_decorator

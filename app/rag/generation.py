@@ -70,6 +70,7 @@ async def generate_answer(
     if settings.LANGFUSE_ENABLED:
         try:
             from langfuse.decorators import langfuse_context
+
             trace_id = langfuse_context.get_current_trace_id()
         except Exception:
             pass

@@ -56,6 +56,7 @@ class LLMClient:
         if lf is not None:
             try:
                 from langfuse.decorators import langfuse_context
+
                 langfuse_context.update_current_observation(
                     input=messages,
                     model=self.model,

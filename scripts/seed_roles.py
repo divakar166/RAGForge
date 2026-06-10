@@ -65,15 +65,31 @@ async def seed() -> None:
 
         # Create roles
         for role_name, role_def in ROLES_CONFIG.items():
-            role = Role(name=role_name, description=role_def["description"], is_system_role=role_def["is_system_role"])
+            role = Role(
+                name=role_name,
+                description=role_def["description"],
+                is_system_role=role_def["is_system_role"],
+            )
             db.add(role)
             await db.flush()
 
             if role_def["permissions"] == ["*"]:
-                role.permissions = list(perm_map.values())
+                permissions = list(perm_map.values())
             else:
-                role.permissions = [perm_map[pc] for pc in role_def["permissions"] if pc in perm_map]
+                permissions = [
+                    perm_map[pc]
+                    for pc in role_def["permissions"]
+                    if pc in perm_map
+                ]
 
+            for perm in permissions:
+                db.add(
+                    RolePermission(
+                        role_id=role.id,
+                        permission_id=perm.id,
+                    )
+                )
+                
         await db.commit()
         print("Seeded roles and permissions successfully!")
 

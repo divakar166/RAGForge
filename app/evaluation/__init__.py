@@ -3,6 +3,7 @@
 Provides dataset generation, metric computation, and CI gate integration.
 Metrics: faithfulness, answer relevancy, context precision, context recall.
 """
+
 import json
 import logging
 import os
@@ -114,7 +115,6 @@ async def compute_ragas_metrics(
     try:
         from datasets import Dataset
         from ragas import evaluate
-        from ragas.llms import LangchainLLMWrapper
         from ragas.metrics import (
             answer_relevancy,
             context_precision,
@@ -123,9 +123,7 @@ async def compute_ragas_metrics(
         )
     except ImportError as e:
         logger.error("RAGAS not installed: %s", e)
-        return EvaluationReport(
-            results=[], aggregate={}, passed=False, thresholds=DEFAULT_THRESHOLDS
-        )
+        return EvaluationReport(results=[], aggregate={}, passed=False, thresholds=DEFAULT_THRESHOLDS)
 
     eval_llm = _build_ragas_llm(llm_config)
 
@@ -161,14 +159,10 @@ async def compute_ragas_metrics(
         for metric_name in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
             if metric_name in df.columns and i < len(df):
                 scores[metric_name] = float(df.iloc[i][metric_name]) if pd.notna(df.iloc[i][metric_name]) else 0.0
-        passed = all(
-            scores.get(k, 0.0) >= v for k, v in DEFAULT_THRESHOLDS.items()
-        )
+        passed = all(scores.get(k, 0.0) >= v for k, v in DEFAULT_THRESHOLDS.items())
         per_sample.append(EvalResult(sample=sample, scores=scores, passed=passed))
 
-    overall_passed = all(
-        aggregate.get(k, 0.0) >= v for k, v in DEFAULT_THRESHOLDS.items()
-    )
+    overall_passed = all(aggregate.get(k, 0.0) >= v for k, v in DEFAULT_THRESHOLDS.items())
 
     return EvaluationReport(
         results=per_sample,
@@ -181,6 +175,7 @@ async def compute_ragas_metrics(
 def _build_ragas_llm(llm_config: dict[str, Any] | None = None) -> Any:
     """Build a RAGAS-compatible LLM wrapper from config."""
     from langchain_openai import ChatOpenAI
+    from ragas.llms import LangchainLLMWrapper
 
     cfg = llm_config or {}
     base_url = cfg.get("base_url", settings.LLM_BASE_URL)

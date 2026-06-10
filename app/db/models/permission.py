@@ -1,4 +1,7 @@
-from sqlalchemy import String, Text
+import uuid
+
+from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -25,5 +28,14 @@ class Permission(UUIDPKMixin, TimestampMixin, Base):
 class RolePermission(Base):
     __tablename__ = "role_permissions"
 
-    role_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    permission_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    permission_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )

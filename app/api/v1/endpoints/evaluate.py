@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.deps import get_current_user
 from app.db.models.user import User
-from app.evaluation import EvalSample, compute_ragas_metrics, load_golden_dataset
+from app.evaluation import compute_ragas_metrics, load_golden_dataset
 from app.services.rbac import has_any_permission
 
 router = APIRouter(prefix="/evaluate", tags=["evaluate"])
