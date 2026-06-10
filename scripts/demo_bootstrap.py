@@ -727,18 +727,31 @@ async def seed_roles_and_permissions(db):
     }
 
     roles_map = {}
+
     for role_name, role_def in ROLES_CONFIG.items():
-        role = Role(name=role_name, description=role_def["description"], is_system_role=role_def["is_system_role"])
+
+        if role_def["permissions"] == ["*"]:
+            permissions = list(perm_map.values())
+        else:
+            permissions = [
+                perm_map[pc]
+                for pc in role_def["permissions"]
+                if pc in perm_map
+            ]
+
+        role = Role(
+            name=role_name,
+            description=role_def["description"],
+            is_system_role=role_def["is_system_role"],
+            permissions=permissions,
+        )
+
         db.add(role)
         await db.flush()
-        if role_def["permissions"] == ["*"]:
-            role.permissions = list(perm_map.values())
-        else:
-            role.permissions = [perm_map[pc] for pc in role_def["permissions"] if pc in perm_map]
+
         roles_map[role_name] = role
 
     await db.commit()
-    logger.info("Seeded 9 permissions and 3 roles (admin, editor, viewer).")
     return roles_map
 
 
@@ -760,13 +773,17 @@ async def create_demo_users(db, roles_map):
             logger.info("User '%s' already exists, skipping.", u_def["username"])
             continue
 
+        role = roles_map.get(u_def["role"])
+
         user = User(
             username=u_def["username"],
             email=u_def["email"],
             hashed_password=hash_password(u_def["password"]),
             is_active=True,
             is_superuser=(u_def["role"] == "admin"),
+            roles=[role] if role else [],
         )
+
         db.add(user)
         await db.flush()
 
