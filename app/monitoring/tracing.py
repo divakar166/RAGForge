@@ -1,8 +1,4 @@
-"""Langfuse tracing integration for the RAG pipeline.
-
-Wraps retrieval, LLM calls, and generation with @observe decorators
-for full observability in Langfuse.
-"""
+"""Langfuse tracing integration for the RAG pipeline."""
 
 import logging
 from typing import Any
@@ -15,7 +11,7 @@ _langfuse = None
 
 
 def get_langfuse():
-    """Lazy-init Langfuse client."""
+    """Lazy-init Langfuse client singleton."""
     global _langfuse
     if _langfuse is None and settings.LANGFUSE_ENABLED:
         try:
@@ -24,32 +20,34 @@ def get_langfuse():
             _langfuse = Langfuse(
                 public_key=settings.LANGFUSE_PUBLIC_KEY,
                 secret_key=settings.LANGFUSE_SECRET_KEY,
-                host=settings.LANGFUSE_HOST,
+                base_url=settings.LANGFUSE_BASE_URL,
             )
-            logger.info("Langfuse initialized")
+            _langfuse.auth_check()
+            logger.info("Langfuse initialized (host=%s)", settings.LANGFUSE_BASE_URL)
         except Exception as e:
             logger.warning("Failed to initialize Langfuse: %s", e)
     return _langfuse
 
 
-def observe(name: str | None = None, **kwargs) -> Any:
-    """Decorator to wrap a function with Langfuse observation.
+async def flush_langfuse():
+    """Flush pending Langfuse traces (call on shutdown)."""
+    lf = get_langfuse()
+    if lf:
+        try:
+            lf.flush()
+            logger.debug("Langfuse traces flushed")
+        except Exception as e:
+            logger.warning("Failed to flush Langfuse: %s", e)
 
-    Falls back to no-op if Langfuse is disabled or unavailable.
-    """
+
+def observe(name: str | None = None, **kwargs: Any) -> Any:
+    """Wrap a function with Langfuse @observe or no-op if disabled."""
     if not settings.LANGFUSE_ENABLED:
-        return _noop_decorator
+        return lambda fn: fn
 
-    try:
-        from langfuse.decorators import observe as langfuse_observe
+    from langfuse.decorators import observe as langfuse_observe
 
-        return langfuse_observe(name=name, **kwargs)
-    except ImportError:
-        return _noop_decorator
-
-
-def _noop_decorator(fn):
-    return fn
+    return langfuse_observe(name=name, **kwargs)
 
 
 def score_trace(trace_id: str, name: str, value: float | int | bool, data_type: str = "NUMERIC") -> None:

@@ -121,7 +121,20 @@ RAGForge/
 - Default viewer role auto-assigned on registration; admin/editor manually assigned via API
 - Document access control stored in Qdrant point payload (`allowed_role_ids`, `allowed_user_ids`, `is_public`, `owner_id`)
 - `RERANKER_MODEL` is not in settings by default — `hasattr` check in reranker.py
-- Langfuse is opt-in (disabled by default); enable via `LANGFUSE_ENABLED=true` + set keys
+- Langfuse is opt-in (disabled by default); enable via `LANGFUSE_ENABLED=true` + set keys (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`)
+- Langfuse is initialized eagerly in app lifespan and flushed on shutdown
+- The `/search/ask` endpoint wraps the full RAG pipeline in a unified trace with `user_id` + `session_id` propagated via `propagate_attributes`
+
+### Dependency Groups
+Deps are split into groups for lean Docker images:
+- `[project].dependencies` — shared (httpx, qdrant-client, rank-bm25, numpy, sqlalchemy, pydantic-settings, bcrypt, python-multipart)
+- `--group app` — app-only (fastapi, uvicorn, asyncpg, python-jose, redis, langfuse, ragas, datasets, pandas, langchain-openai, alembic)
+- `--group worker` — worker-only (celery, psycopg2-binary, pdfplumber, python-docx)
+- `--group dev` — dev tools (pytest, ruff, mypy, aiosqlite)
+- Dev setup: `uv sync --group app --group dev`
+- App Docker: `uv sync --no-dev --group app`
+- Worker Docker: `uv sync --no-dev --group worker`
+- `app/workers/celery_app.py` is a lean module (only `celery` import) so the app can dispatch tasks via `send_task()` without importing the worker's heavy task deps.
 
 ### RAG Pipeline Flow
 1. User uploads document → Celery `process_document` task
@@ -153,7 +166,11 @@ RAGForge/
 |---------|------|---------|
 | app | 8000 | FastAPI app |
 | worker | — | Celery async tasks |
+| frontend | 3000 | Next.js app |
 | postgres | 5432 | Relational DB |
 | redis | 6379 | Cache + broker |
 | qdrant | 6333 | Vector store |
 | tei | 8080 | TEI inference |
+
+All images run as non-root user. Frontend uses Next.js `output: standalone` for minimal size.
+Docker Compose services use `restart: unless-stopped` and healthchecks for production readiness.

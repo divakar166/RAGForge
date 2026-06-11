@@ -72,9 +72,9 @@ async def upload_document(
 
     # Dispatch Celery task for async processing
     try:
-        from app.workers.tasks import process_document as process_doc_task
+        from app.workers.celery_app import celery_app
 
-        process_doc_task.delay(str(doc.id))
+        celery_app.send_task("process_document", args=[str(doc.id)])
     except Exception as e:
         logger.warning("Failed to dispatch Celery task: %s", e)
 

@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.git/
+.gitignore
+.env*
+*.md
+AGENTS.md
+CLAUDE.md
+.DS_Store
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts

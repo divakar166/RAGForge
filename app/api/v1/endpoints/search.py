@@ -72,27 +72,67 @@ async def ask(
     if not await has_any_permission(user, ["search:query", "*:*"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
+    from app.monitoring.tracing import get_langfuse
+
     pipeline = await _get_retrieval_pipeline()
     role_ids = [str(r.id) for r in user.roles]
-    results = await pipeline.search(
-        query=req.query,
-        user_id=str(user.id),
-        role_ids=role_ids,
-        top_k=req.top_k,
-    )
 
-    if not results:
-        return RAGResponse(
+    lf = get_langfuse()
+    if lf is not None:
+        with lf.start_as_current_observation(
+            as_type="span",
+            name="ask",
+            input={"query": req.query},
+        ) as root_span:
+            from langfuse import propagate_attributes
+            from langfuse.decorators import langfuse_context
+
+            with propagate_attributes(
+                user_id=str(user.id),
+                session_id=str(user.id),
+                tags=["rag:ask"],
+            ):
+                results = await pipeline.search(
+                    query=req.query,
+                    user_id=str(user.id),
+                    role_ids=role_ids,
+                    top_k=req.top_k,
+                )
+
+                if not results:
+                    root_span.update(output={"answer": "No relevant documents found."})
+                    return RAGResponse(
+                        query=req.query,
+                        answer="No relevant documents found.",
+                        citations=[],
+                        model="none",
+                    )
+
+                answer = await generate_answer(req.query, results)
+                root_span.update(output=answer)
+
+                trace_id = langfuse_context.get_current_trace_id()
+    else:
+        results = await pipeline.search(
             query=req.query,
-            answer="No relevant documents found.",
-            citations=[],
-            model="none",
+            user_id=str(user.id),
+            role_ids=role_ids,
+            top_k=req.top_k,
         )
 
-    answer = await generate_answer(req.query, results)
+        if not results:
+            return RAGResponse(
+                query=req.query,
+                answer="No relevant documents found.",
+                citations=[],
+                model="none",
+            )
+
+        answer = await generate_answer(req.query, results)
+        trace_id = answer.pop("trace_id", None)
+
     await log_action(db, str(user.id), "search:ask", details={"query": req.query, "top_k": req.top_k})
 
-    trace_id = answer.pop("trace_id", None)
     resp = RAGResponse(**answer)
     resp.trace_id = trace_id
     resp.citations = [

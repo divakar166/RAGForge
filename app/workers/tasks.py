@@ -5,7 +5,6 @@ import uuid
 from typing import Any
 
 import httpx
-from celery import Celery
 from qdrant_client import models as qmodels
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker
@@ -15,23 +14,7 @@ from app.rag.chunking.pipeline import ChunkingPipeline
 from app.rag.parser import parse_document
 from app.rag.sparse import BM25SparseEncoder
 from app.rag.vector_store import QdrantStore
-
-celery_app = Celery(
-    "ragforge",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
-)
-
-celery_app.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
-    task_track_started=True,
-    task_acks_late=True,
-    worker_prefetch_multiplier=1,
-)
+from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 

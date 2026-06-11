@@ -397,7 +397,7 @@ lf.score(
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-xxxxx
 LANGFUSE_SECRET_KEY=sk-lf-xxxxx
-LANGFUSE_HOST=https://cloud.langfuse.com
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ```
 
 ## Self-Hosting

@@ -20,6 +20,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     setup_logging()
     logger.info("Starting %s", settings.APP_NAME)
 
+    # Initialize Langfuse eagerly so @observe decorators work
+    if settings.LANGFUSE_ENABLED:
+        from app.monitoring.tracing import get_langfuse
+
+        get_langfuse()
+
     # Initialize Qdrant collection (non-async operation)
     try:
         store = QdrantStore()
@@ -29,6 +35,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.warning("Qdrant not available on startup: %s", e)
 
     yield
+
+    # Flush Langfuse traces before shutdown
+    if settings.LANGFUSE_ENABLED:
+        from app.monitoring.tracing import flush_langfuse
+
+        await flush_langfuse()
 
     await rate_limiter.close()
     logger.info("Shutdown complete")

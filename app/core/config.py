@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # Langfuse
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
     LANGFUSE_ENABLED: bool = False
 
     # RAGAS

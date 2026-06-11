@@ -17,28 +17,28 @@ help:
 	@echo "  make seed          Seed roles and permissions"
 
 install:
-	uv sync
+	uv sync --group app --group dev
 
 dev:
-	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	uv run --group app uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 lint:
-	uv run ruff check app/
+	uv run --group app --group dev ruff check app/
 
 format:
-	uv run ruff format app/
+	uv run --group app --group dev ruff format app/
 
 test:
-	uv run pytest
+	uv run --group app --group dev pytest
 
 migrate:
-	uv run alembic upgrade head
+	uv run --group app alembic upgrade head
 
 revision:
-	uv run alembic revision --autogenerate -m "$(m)"
+	uv run --group app alembic revision --autogenerate -m "$(m)"
 
 run:
-	uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+	uv run --group app uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 docker-up:
 	docker compose up --build -d
