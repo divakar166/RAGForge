@@ -1,5 +1,5 @@
 from datetime import datetime
-
+from uuid import UUID
 from pydantic import BaseModel
 
 
@@ -11,7 +11,7 @@ class DocumentResponse(BaseModel):
     file_size: int
     status: str
     is_public: bool
-    owner_id: str
+    owner_id: UUID
     allowed_role_ids: list[str] = []
     allowed_user_ids: list[str] = []
     chunk_count: int = 0

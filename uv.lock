@@ -3275,6 +3275,7 @@ worker = [
     { name = "pdfplumber" },
     { name = "psycopg2-binary" },
     { name = "python-docx" },
+    { name = "redis" },
 ]
 
 [package.metadata]
@@ -3319,6 +3320,7 @@ worker = [
     { name = "pdfplumber", specifier = ">=0.11.9" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "python-docx", specifier = ">=1.2.0" },
+    { name = "redis", specifier = ">=8.0.0" },
 ]
 
 [[package]]
