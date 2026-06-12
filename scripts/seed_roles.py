@@ -10,8 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 from app.db.models.permission import Permission, RolePermission
-from app.db.models.role import Role, UserRole
-from app.db.models.user import User
+from app.db.models.role import Role
 
 DEFAULT_PERMISSIONS = [
     {"codename": "document:create", "name": "Create Documents", "resource_type": "document", "action": "create"},
@@ -89,7 +88,7 @@ async def seed() -> None:
                         permission_id=perm.id,
                     )
                 )
-                
+
         await db.commit()
         print("Seeded roles and permissions successfully!")
 

@@ -19,7 +19,11 @@ COPY --from=builder /app/app ./app
 COPY --from=builder /app/alembic.ini ./alembic.ini
 COPY --from=builder /app/alembic ./alembic
 ENV PATH="/app/.venv/bin:$PATH"
-RUN groupadd -r app && useradd -r -g app -d /app -s /sbin/nologin app && chown -R app:app /app
+# RUN groupadd -r app && useradd -r -g app -d /app -s /sbin/nologin app && chown -R app:app /app
+RUN groupadd -r app \
+ && useradd -r -g app -d /app -s /sbin/nologin app \
+ && mkdir -p /app/uploads \
+ && chown -R app:app /app
 USER app
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -6,7 +6,9 @@ from collections.abc import AsyncGenerator
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 from app.core.deps import get_current_user
 from app.db.base import Base
@@ -15,6 +17,12 @@ from app.db.session import get_db
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+
+# ── SQLite compatibility: map JSONB → JSON for test DB ──
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
+# ── End SQLite compat ──
 
 
 @pytest.fixture(scope="session")
@@ -55,6 +63,9 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 @pytest_asyncio.fixture
 async def test_user(db_session: AsyncSession) -> User:
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
     from app.core.security import hash_password
 
     user = User(
@@ -65,7 +76,11 @@ async def test_user(db_session: AsyncSession) -> User:
     )
     db_session.add(user)
     await db_session.flush()
-    return user
+    # Reload with roles eagerly loaded to avoid MissingGreenlet in async tests
+    result = await db_session.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user.id)
+    )
+    return result.scalar_one()
 
 
 @pytest_asyncio.fixture

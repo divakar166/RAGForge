@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 async def register_user(db: AsyncSession, req: RegisterRequest) -> User:
-    existing = await db.execute(select(User).where((User.email == req.email) | (User.username == req.username)))
+    existing = await db.execute(select(User).where((User.email == req.email) | (User.username == req.full_name)))
     if existing.scalar_one_or_none():
         raise ValueError("Email or username already taken")
 

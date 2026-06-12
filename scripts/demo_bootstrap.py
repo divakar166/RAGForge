@@ -672,6 +672,7 @@ async def run_migrations():
     """Run Alembic migrations to head."""
     logger.info("Running Alembic migrations...")
     from alembic.config import Config as AlembicConfig
+
     from alembic import command
 
     alembic_cfg = AlembicConfig("alembic.ini")
@@ -683,6 +684,7 @@ async def seed_roles_and_permissions(db):
     """Seed roles (admin, editor, viewer) and all permissions."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
+
     from app.db.models.permission import Permission
     from app.db.models.role import Role
 
@@ -761,8 +763,8 @@ async def seed_roles_and_permissions(db):
 
 async def create_demo_users(db, roles_map):
     """Create demo users: admin, editor, viewer."""
-    from app.db.models.user import User
     from app.core.security import hash_password
+    from app.db.models.user import User
 
     DEMO_USERS = [
         {"username": "admin", "email": "admin@ragforge.dev", "password": "admin123", "role": "admin"},
@@ -811,6 +813,9 @@ async def ingest_demo_documents(db, upload_dir: str):
     - editor: owns 1 doc (Distributed Systems Blog) shared with viewer role
     - viewer: owns 1 doc (ML Lead JD) shared with editor role
     """
+    import httpx
+    from qdrant_client import models as qmodels
+
     from app.db.models.document import Document
     from app.db.models.role import Role
     from app.db.models.user import User
@@ -818,8 +823,6 @@ async def ingest_demo_documents(db, upload_dir: str):
     from app.rag.parser import parse_document
     from app.rag.sparse import BM25SparseEncoder
     from app.rag.vector_store import QdrantStore
-    from qdrant_client import models as qmodels
-    import httpx
 
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -979,6 +982,7 @@ async def main():
 
     # 2. DB setup
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     from app.core.config import settings
 
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
@@ -1018,8 +1022,8 @@ async def main():
         print(f"  - {d['title']} ({d['chunks']} chunks)")
 
     print(f"\nUpload directory: {upload_dir}")
-    print(f"\nAPI: http://localhost:8000/api/v1")
-    print(f"Docs: http://localhost:8000/docs")
+    print("\nAPI: http://localhost:8000/api/v1")
+    print("Docs: http://localhost:8000/docs")
     print("""
 Quick test:
   curl -X POST http://localhost:8000/api/v1/auth/login \\

@@ -1,7 +1,5 @@
-import uuid
-
 from sqlalchemy import Boolean, ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,7 +16,7 @@ class Document(UUIDPKMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="uploaded")
     doc_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
-    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
 
     owner = relationship("User", lazy="selectin")
