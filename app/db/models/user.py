@@ -1,8 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPKMixin
+
+if TYPE_CHECKING:
+    from app.db.models.organization import OrganizationMember
 
 
 class User(UUIDPKMixin, TimestampMixin, Base):
@@ -14,4 +21,6 @@ class User(UUIDPKMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    roles = relationship("Role", secondary="user_roles", back_populates="users", lazy="selectin")
+    memberships: Mapped[list["OrganizationMember"]] = relationship(
+        back_populates="user", lazy="selectin"
+    )

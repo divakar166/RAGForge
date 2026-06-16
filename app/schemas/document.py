@@ -1,5 +1,4 @@
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -11,18 +10,17 @@ class DocumentResponse(BaseModel):
     file_type: str
     file_size: int
     status: str
-    is_public: bool
-    owner_id: UUID
-    allowed_role_ids: list[str] = []
-    allowed_user_ids: list[str] = []
+    is_public_in_org: bool
+    uploaded_by_id: str
+    organization_id: str
+    collection_id: str | None = None
     chunk_count: int = 0
     created_at: datetime
     updated_at: datetime
 
 
 class DocumentAccessRequest(BaseModel):
-    is_public: bool | None = None
-    allowed_role_ids: list[str] = []
+    is_public_in_org: bool | None = None
     allowed_user_ids: list[str] = []
 
 

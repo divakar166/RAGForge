@@ -25,7 +25,7 @@ class RetrievalResult:
 
 
 class RetrievalPipeline:
-    """Full retrieval pipeline: embed → hybrid search → rerank."""
+    """Full retrieval pipeline: embed -> hybrid search -> rerank."""
 
     def __init__(
         self,
@@ -44,23 +44,19 @@ class RetrievalPipeline:
         self,
         query: str,
         user_id: str,
-        role_ids: list[str],
+        org_role: str = "member",
         top_k: int = 5,
     ) -> list[RetrievalResult]:
-        # 1. Get dense query embedding
         dense_result = await self.embed_provider.embed([query])
         query_dense = dense_result["embeddings"][0]
 
-        # 2. Get sparse query representation
         if self.sparse_encoder.is_fitted:
             query_sparse = self.sparse_encoder.encode(query)
         else:
             query_sparse = ([], [])
 
-        # 3. Build RBAC filter
-        rbac_filter = self.vector_store.build_rbac_filter(user_id, role_ids)
+        rbac_filter = self.vector_store.build_rbac_filter(user_id, org_role)
 
-        # 4. Hybrid search
         prefetch_limit = max(top_k * 4, settings.TOP_K_RETRIEVAL)
         raw_results = self.vector_store.hybrid_search(
             query_dense=query_dense,
@@ -73,12 +69,10 @@ class RetrievalPipeline:
         if not raw_results:
             return []
 
-        # 5. Rerank with cross-encoder
         if settings.RERANKER_ENABLED and len(raw_results) > top_k:
             texts = [r.payload.get("content", "") for r in raw_results if r.payload]
             reranked = await self.reranker.rerank(query, texts)
 
-            # Map back to original results using content matching
             text_to_result = {r.payload.get("content", ""): r for r in raw_results if r.payload}
             reranked_results: list[RetrievalResult] = []
             for text, score in reranked[:top_k]:
@@ -97,7 +91,6 @@ class RetrievalPipeline:
                     )
             return reranked_results
 
-        # Skip rerank — just return top_k
         results: list[RetrievalResult] = []
         for r in raw_results[:top_k]:
             if r.payload:

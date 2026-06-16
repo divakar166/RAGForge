@@ -2,20 +2,16 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.deps import get_current_user
-from app.db.models.user import User
+from app.core.deps import OrganizationContext, get_org_context, require_org_role
 from app.evaluation import compute_ragas_metrics, load_golden_dataset
 
-router = APIRouter(prefix="/evaluate", tags=["evaluate"])
+router = APIRouter(prefix="/evaluate", tags=["orgs-evaluate"])
 
 
 @router.post("/run")
 async def run_evaluation(
-    user: User = Depends(get_current_user),
+    ctx: OrganizationContext = Depends(require_org_role("owner", "admin")),
 ):
-    if not user.is_superuser:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     samples = load_golden_dataset("data/golden_dataset.json")
     if not samples:
         raise HTTPException(
@@ -37,9 +33,7 @@ async def run_evaluation(
 
 @router.get("/dataset")
 async def get_dataset_info(
-    user: User = Depends(get_current_user),
+    ctx: OrganizationContext = Depends(get_org_context),
 ):
-    if not user.is_superuser:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     samples = load_golden_dataset("data/golden_dataset.json")
     return {"name": "Golden Dataset", "size": len(samples)}

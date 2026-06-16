@@ -76,9 +76,10 @@ async def test_user(db_session: AsyncSession) -> User:
     )
     db_session.add(user)
     await db_session.flush()
-    # Reload with roles eagerly loaded to avoid MissingGreenlet in async tests
+    from app.db.models.organization import OrganizationMember
+
     result = await db_session.execute(
-        select(User).options(selectinload(User.roles)).where(User.id == user.id)
+        select(User).options(selectinload(User.memberships).selectinload(OrganizationMember.organization)).where(User.id == user.id)
     )
     return result.scalar_one()
 

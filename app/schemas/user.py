@@ -3,19 +3,12 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class RoleBrief(BaseModel):
-    id: str
-    name: str
-    permissions: list[str] = []
-
-
 class UserResponse(BaseModel):
     id: str
     email: str
-    full_name: str
+    username: str
     is_active: bool
     is_superuser: bool
-    roles: list[RoleBrief] = []
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

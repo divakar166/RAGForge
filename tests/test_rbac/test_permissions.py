@@ -1,54 +1,67 @@
-"""Tests for RBAC service."""
+"""Tests for org-based RBAC via require_org_role."""
 
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
 
-from app.db.models.user import User
-from app.services.rbac import get_user_permissions, has_any_permission, has_permission
-
-
-@pytest.fixture
-def admin_user():
-    user = MagicMock(spec=User)
-    user.is_superuser = True
-    user.roles = []
-    return user
+from app.core.deps import OrganizationContext, require_org_role
+from app.core.security import InvalidTokenError, create_access_token, decode_token
+from app.db.models.organization import OrganizationMember
 
 
-@pytest.fixture
-def regular_user():
-    user = MagicMock(spec=User)
-    user.is_superuser = False
-    role = MagicMock()
-    role.permissions = [MagicMock(codename="document:read")]
-    user.roles = [role]
-    return user
+class TestOrgRole:
+    """Tests for the require_org_role dependency factory."""
+
+    def test_require_org_role_returns_factory(self):
+        dep = require_org_role("owner", "admin")
+        assert callable(dep)
+
+    @pytest.mark.asyncio
+    async def test_require_org_role_checks_role(self):
+        dep = require_org_role("admin")
+        member = MagicMock(spec=OrganizationMember)
+        member.role = "viewer"
+        member.user = MagicMock(is_superuser=False)
+        ctx = OrganizationContext(organization=None, member=member, qdrant_store=None)
+        with pytest.raises(HTTPException) as exc:
+            await dep(ctx)
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_require_org_role_allows_valid_role(self):
+        dep = require_org_role("owner", "admin")
+        member = MagicMock(spec=OrganizationMember)
+        member.role = "admin"
+        member.user = MagicMock(is_superuser=False)
+        ctx = OrganizationContext(organization=None, member=member, qdrant_store=None)
+        result = await dep(ctx)
+        assert result is ctx
 
 
-@pytest.mark.asyncio
-async def test_admin_has_all_permissions(admin_user):
-    assert await has_permission(admin_user, "anything")
+class TestToken:
+    """JWT token integration with org claims."""
 
+    def test_token_with_org_claims(self):
+        token = create_access_token(
+            subject="user-uuid",
+            extra_claims={
+                "org_id": "org-uuid",
+                "org_role": "admin",
+                "org_name": "Test Org",
+            },
+        )
+        payload = decode_token(token)
+        assert payload["org_id"] == "org-uuid"
+        assert payload["org_role"] == "admin"
+        assert payload["org_name"] == "Test Org"
 
-@pytest.mark.asyncio
-async def test_user_has_specific_permission(regular_user):
-    assert await has_permission(regular_user, "document:read")
+    def test_token_without_org_claims(self):
+        token = create_access_token(subject="user-uuid")
+        payload = decode_token(token)
+        assert "org_id" not in payload
+        assert "org_role" not in payload
 
-
-@pytest.mark.asyncio
-async def test_user_lacks_permission(regular_user):
-    assert not await has_permission(regular_user, "document:delete")
-
-
-@pytest.mark.asyncio
-async def test_has_any_permission(regular_user):
-    assert await has_any_permission(regular_user, ["document:read", "document:delete"])
-    assert not await has_any_permission(regular_user, ["document:delete", "document:create"])
-
-
-@pytest.mark.asyncio
-async def test_get_user_permissions(regular_user):
-    perms = await get_user_permissions(regular_user)
-    assert "document:read" in perms
-    assert len(perms) == 1
+    def test_invalid_token_raises(self):
+        with pytest.raises(InvalidTokenError):
+            decode_token("invalid.token.here")

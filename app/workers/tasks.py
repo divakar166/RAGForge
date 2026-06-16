@@ -18,7 +18,6 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Sync DB engine for worker
 _engine = None
 _SessionFactory = None
 
@@ -51,9 +50,9 @@ def _get_sparse_encoder(texts: list[str]) -> BM25SparseEncoder:
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=30, acks_late=True)
-def process_document(self, document_id: str) -> dict[str, Any]:
-    """Parse, chunk, embed (dense + sparse), and index a document into Qdrant."""
-    logger.info("Processing document %s", document_id)
+def process_document(self, document_id: str, organization_id: str = "") -> dict[str, Any]:
+    """Parse, chunk, embed, and index a document into the org-scoped Qdrant collection."""
+    logger.info("Processing document %s for org %s", document_id, organization_id)
 
     db = _get_db()
 
@@ -61,33 +60,25 @@ def process_document(self, document_id: str) -> dict[str, Any]:
         from app.db.models.document import Document
 
         doc = db.execute(select(Document).where(Document.id == uuid.UUID(document_id))).scalar_one_or_none()
-
         if not doc:
             raise ValueError(f"Document {document_id} not found")
 
         doc.status = "processing"
         db.commit()
 
-        # 1. Parse
         text = parse_document(doc.file_path)
         logger.info("Parsed document %s: %d chars", document_id, len(text))
 
         if not text.strip():
             doc.status = "failed"
             db.commit()
-            return {
-                "document_id": document_id,
-                "status": "failed",
-                "error": "Empty document",
-            }
+            return {"document_id": document_id, "status": "failed", "error": "Empty document"}
 
-        # 2. Chunk
         pipeline = ChunkingPipeline()
         chunk_strategy = pipeline.STRATEGY_MAP.get(doc.file_type, "recursive")
         chunks = pipeline.chunk(text, doc.title or doc.file_path, doc.file_type, chunk_strategy)
         logger.info("Chunked into %d chunks", len(chunks))
 
-        # 3. Generate dense embeddings (batched)
         chunk_texts = [c.content for c in chunks]
         batch_size = 32
         all_embeddings: list[list[float]] = []
@@ -97,11 +88,10 @@ def process_document(self, document_id: str) -> dict[str, Any]:
             embeddings = _get_tei_embedding(batch)
             all_embeddings.extend(embeddings)
 
-        # 4. Generate sparse vectors for the corpus
         sparse_encoder = _get_sparse_encoder(chunk_texts)
         all_sparse: list[tuple[list[int], list[float]]] = [sparse_encoder.encode(t) for t in chunk_texts]
 
-        # 5. Build Qdrant points
+        # Build points with deterministic IDs
         points: list[qmodels.PointStruct] = []
         for i, chunk in enumerate(chunks):
             payload = {
@@ -111,16 +101,15 @@ def process_document(self, document_id: str) -> dict[str, Any]:
                 "section_path": chunk.section_path or "",
                 "strategy": chunk.strategy,
                 "content": chunk.content,
-                "owner_id": str(doc.owner_id),
-                "is_public": doc.is_public,
-                "allowed_role_ids": [],  # TODO: populate from Document access rules
-                "allowed_user_ids": [],  # TODO: populate from Document access rules
+                "uploaded_by_id": str(doc.uploaded_by_id),
+                "is_public_in_org": doc.is_public_in_org,
+                "collection_id": str(doc.collection_id) if doc.collection_id else "",
             }
 
             sparse_indices, sparse_values = all_sparse[i]
 
             point = qmodels.PointStruct(
-                id=str(uuid.uuid4()),
+                id=f"{document_id}:{chunk.index}",
                 vector={
                     "dense": all_embeddings[i] if i < len(all_embeddings) else [],
                     "sparse": qmodels.SparseVector(
@@ -132,13 +121,14 @@ def process_document(self, document_id: str) -> dict[str, Any]:
             )
             points.append(point)
 
-        # 6. Store in Qdrant
-        store = QdrantStore()
+        # Use org-scoped collection
+        effective_org_id = organization_id or str(doc.organization_id)
+        store = QdrantStore(organization_id=effective_org_id)
         store.ensure_collection(len(all_embeddings[0]) if all_embeddings else settings.EMBEDDING_DIM)
         store.upsert_chunks(points)
 
-        # 7. Update document status
         doc.status = "indexed"
+        doc.chunk_count = len(points)
         db.commit()
 
         logger.info("Document %s indexed successfully (%d chunks)", document_id, len(points))

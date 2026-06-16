@@ -1,4 +1,4 @@
-import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,6 @@ class RAGRequest(BaseModel):
 
 
 class SearchResultItem(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     score: float
     text: str
     content: str = ""
@@ -45,3 +44,12 @@ class FeedbackRequest(BaseModel):
     trace_id: str = Field(min_length=1)
     score: int | str = Field(default=1, description="0/1 or 'thumbs_up'/'thumbs_down'")
     comment: str = ""
+
+
+class ConversationResponse(BaseModel):
+    id: str
+    query: str
+    answer: str
+    citations: dict | None = None
+    feedback_score: int | None = None
+    created_at: datetime

@@ -1,6 +1,6 @@
 """Tests for security / auth utilities."""
 
-from app.core.security import create_access_token, decode_token, hash_password, verify_password
+from app.core.security import InvalidTokenError, create_access_token, decode_token, hash_password, verify_password
 
 
 def test_password_hashing():
@@ -17,6 +17,9 @@ def test_access_token_creation_and_verification():
     assert "exp" in payload
 
 
-def test_invalid_token_returns_empty():
-    payload = decode_token("invalid.token.here")
-    assert payload == {}
+def test_invalid_token_raises():
+    try:
+        decode_token("invalid.token.here")
+        assert False, "Expected InvalidTokenError"
+    except InvalidTokenError:
+        pass

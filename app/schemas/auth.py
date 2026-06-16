@@ -5,10 +5,17 @@ from pydantic import BaseModel, EmailStr, Field
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    full_name: str = Field(min_length=3, max_length=64, alias="username")
+    username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=128)
+    org_name: str = Field(min_length=1, max_length=256)
+    org_slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9-]+$")
 
-    model_config = {"populate_by_name": True}
+
+class RegisterInviteRequest(BaseModel):
+    email: EmailStr
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+    invitation_token: str = Field(min_length=1)
 
 
 class LoginRequest(BaseModel):
@@ -27,18 +34,23 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-class RoleBrief(BaseModel):
+class OrgSelectRequest(BaseModel):
+    org_id: str
+
+
+class OrgBrief(BaseModel):
     id: str
     name: str
-    permissions: list[str] = []
+    slug: str
+    role: str
 
 
 class UserResponse(BaseModel):
     id: str
     email: str
-    full_name: str
+    username: str
     is_active: bool
     is_superuser: bool
-    roles: list[RoleBrief] = []
+    organizations: list[OrgBrief] = []
     created_at: datetime | None = None
     updated_at: datetime | None = None

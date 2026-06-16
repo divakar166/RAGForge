@@ -1,4 +1,4 @@
-"""Qdrant vector store wrapper with hybrid search support."""
+"""Qdrant vector store wrapper with per-organization collections."""
 
 import logging
 from typing import Optional
@@ -12,20 +12,33 @@ logger = logging.getLogger(__name__)
 
 
 class QdrantStore:
-    """Wraps Qdrant client for dense + sparse hybrid search with RBAC."""
+    """Per-organization Qdrant store.
+
+    Each organization gets its own collection named ``org_{organization_id}``,
+    providing tenant isolation at the vector database level.
+    """
 
     def __init__(
         self,
+        organization_id: str = "",
         host: str = "",
         port: int = 0,
         api_key: str | None = None,
-        collection: str = "",
+        vector_size: int = 384,
     ):
         self.host = host or settings.QDRANT_HOST
         self.port = port or settings.QDRANT_PORT
         self.api_key = api_key or settings.QDRANT_API_KEY
-        self.collection = collection or settings.QDRANT_COLLECTION
+        self.organization_id = organization_id
+        self.collection = f"org_{organization_id}" if organization_id else settings.QDRANT_COLLECTION
         self._client: QdrantClient | None = None
+        self._ensured = False
+        self._vector_size = vector_size
+
+    def _ensure(self) -> None:
+        if not self._ensured:
+            self.ensure_collection(vector_size=self._vector_size)
+            self._ensured = True
 
     @property
     def client(self) -> QdrantClient:
@@ -59,27 +72,17 @@ class QdrantStore:
             )
             logger.info("Created Qdrant collection '%s'", self.collection)
 
-            # Create payload indexes for RBAC filtering
-            self.client.create_payload_index(
-                collection_name=self.collection,
-                field_name="document_id",
-                field_type=qmodels.PayloadSchemaType.KEYWORD,
-            )
-            self.client.create_payload_index(
-                collection_name=self.collection,
-                field_name="owner_id",
-                field_type=qmodels.PayloadSchemaType.KEYWORD,
-            )
-            self.client.create_payload_index(
-                collection_name=self.collection,
-                field_name="is_public",
-                field_type=qmodels.PayloadSchemaType.BOOL,
-            )
+            for field_name in ("document_id", "uploaded_by_id", "is_public_in_org", "collection_id"):
+                    self.client.create_payload_index(
+                        collection_name=self.collection,
+                        field_name=field_name,
+                        field_schema=qmodels.PayloadSchemaType.KEYWORD
+                        if field_name != "is_public_in_org"
+                        else qmodels.PayloadSchemaType.BOOL,
+                    )
 
-    def upsert_chunks(
-        self,
-        points: list[qmodels.PointStruct],
-    ) -> None:
+    def upsert_chunks(self, points: list[qmodels.PointStruct]) -> None:
+        self._ensure()
         self.client.upsert(
             collection_name=self.collection,
             points=points,
@@ -94,6 +97,7 @@ class QdrantStore:
         top_k: int = 20,
         prefetch_limit: int = 50,
     ) -> list[qmodels.ScoredPoint]:
+        self._ensure()
         prefetches = [
             qmodels.Prefetch(
                 query=query_dense,
@@ -121,7 +125,6 @@ class QdrantStore:
             limit=top_k,
             with_payload=True,
         )
-
         return result.points
 
     def search_dense(
@@ -130,6 +133,7 @@ class QdrantStore:
         rbac_filter: Optional[qmodels.Filter] = None,
         top_k: int = 20,
     ) -> list[qmodels.ScoredPoint]:
+        self._ensure()
         result = self.client.query_points(
             collection_name=self.collection,
             query=query,
@@ -141,6 +145,7 @@ class QdrantStore:
         return result.points
 
     def delete_by_document_id(self, document_id: str) -> None:
+        self._ensure()
         self.client.delete(
             collection_name=self.collection,
             points_selector=qmodels.FilterSelector(
@@ -155,33 +160,28 @@ class QdrantStore:
             ),
         )
 
-    def build_rbac_filter(
-        self,
-        user_id: str,
-        role_ids: list[str],
-    ) -> qmodels.Filter:
-        """Build Qdrant filter for RBAC: user can see public docs + own docs + role-accessible docs."""
-        should_conditions: list[qmodels.Condition] = [
-            qmodels.FieldCondition(
-                key="is_public",
-                match=qmodels.MatchValue(value=True),
-            ),
-            qmodels.FieldCondition(
-                key="owner_id",
-                match=qmodels.MatchValue(value=user_id),
-            ),
-        ]
+    def build_rbac_filter(self, user_id: str, org_role: str) -> qmodels.Filter | None:
+        """Build Qdrant filter for org-scoped RBAC.
 
-        if role_ids:
-            should_conditions.append(
-                qmodels.FieldCondition(
-                    key="allowed_role_ids",
-                    match=qmodels.MatchAny(any=role_ids),
-                ),
-            )
+        Admins/owners see everything. Others see public docs + own uploaded docs.
+        """
+        if org_role in ("owner", "admin"):
+            return None
 
         return qmodels.Filter(
-            min_should=qmodels.MinShould(conditions=should_conditions, min_count=1),
+            min_should=qmodels.MinShould(
+                conditions=[
+                    qmodels.FieldCondition(
+                        key="is_public_in_org",
+                        match=qmodels.MatchValue(value=True),
+                    ),
+                    qmodels.FieldCondition(
+                        key="uploaded_by_id",
+                        match=qmodels.MatchValue(value=user_id),
+                    ),
+                ],
+                min_count=1,
+            ),
         )
 
     def close(self) -> None:

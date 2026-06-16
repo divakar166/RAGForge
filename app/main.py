@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
 from app.core.logger import setup_logging
-from app.rag.vector_store import QdrantStore
 from app.services.rate_limit import rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -20,26 +19,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     setup_logging()
     logger.info("Starting %s", settings.APP_NAME)
 
-    # Initialize Langfuse eagerly so @observe decorators work
     if settings.LANGFUSE_ENABLED:
         from app.monitoring.tracing import get_langfuse
-
         get_langfuse()
-
-    # Initialize Qdrant collection (non-async operation)
-    try:
-        store = QdrantStore()
-        store.ensure_collection(settings.EMBEDDING_DIM)
-        logger.info("Qdrant collection '%s' ready", settings.QDRANT_COLLECTION)
-    except Exception as e:
-        logger.warning("Qdrant not available on startup: %s", e)
 
     yield
 
-    # Flush Langfuse traces before shutdown
     if settings.LANGFUSE_ENABLED:
         from app.monitoring.tracing import flush_langfuse
-
         await flush_langfuse()
 
     await rate_limiter.close()
@@ -56,7 +43,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "https://app.ragforge.io"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
