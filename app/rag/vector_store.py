@@ -1,10 +1,11 @@
-"""Qdrant vector store wrapper with per-organization collections."""
+"""Qdrant Cloud vector store wrapper with per-organization collections."""
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from qdrant_client import QdrantClient
 from qdrant_client import models as qmodels
+from qdrant_client.http.models import Document as QdrantDocument
 
 from app.core.config import settings
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class QdrantStore:
-    """Per-organization Qdrant store.
+    """Per-organization Qdrant store, backed by Qdrant Cloud.
 
     Each organization gets its own collection named ``org_{organization_id}``,
     providing tenant isolation at the vector database level.
@@ -21,13 +22,11 @@ class QdrantStore:
     def __init__(
         self,
         organization_id: str = "",
-        host: str = "",
-        port: int = 0,
+        url: str = "",
         api_key: str | None = None,
         vector_size: int = 384,
     ):
-        self.host = host or settings.QDRANT_HOST
-        self.port = port or settings.QDRANT_PORT
+        self.url = url or settings.QDRANT_URL
         self.api_key = api_key or settings.QDRANT_API_KEY
         self.organization_id = organization_id
         self.collection = f"org_{organization_id}" if organization_id else settings.QDRANT_COLLECTION
@@ -44,9 +43,9 @@ class QdrantStore:
     def client(self) -> QdrantClient:
         if self._client is None:
             self._client = QdrantClient(
-                host=self.host,
-                port=self.port,
+                url=self.url,
                 api_key=self.api_key,
+                cloud_inference=settings.QDRANT_CLOUD_INFERENCE,
                 prefer_grpc=False,
             )
         return self._client
@@ -72,14 +71,12 @@ class QdrantStore:
             )
             logger.info("Created Qdrant collection '%s'", self.collection)
 
-            for field_name in ("document_id", "uploaded_by_id", "is_public_in_org", "collection_id"):
-                    self.client.create_payload_index(
-                        collection_name=self.collection,
-                        field_name=field_name,
-                        field_schema=qmodels.PayloadSchemaType.KEYWORD
-                        if field_name != "is_public_in_org"
-                        else qmodels.PayloadSchemaType.BOOL,
-                    )
+            for field_name in ("document_id", "uploaded_by_id", "allowed_roles", "collection_id"):
+                self.client.create_payload_index(
+                    collection_name=self.collection,
+                    field_name=field_name,
+                    field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                )
 
     def upsert_chunks(self, points: list[qmodels.PointStruct]) -> None:
         self._ensure()
@@ -89,18 +86,24 @@ class QdrantStore:
             wait=True,
         )
 
+    def _resolve_dense_query(self, query_dense: Union[str, list[float]]) -> Union[str, list[float], QdrantDocument]:
+        if settings.QDRANT_CLOUD_INFERENCE and isinstance(query_dense, str):
+            return QdrantDocument(text=query_dense, model=settings.EMBEDDING_MODEL)
+        return query_dense
+
     def hybrid_search(
         self,
-        query_dense: list[float],
+        query_dense: Union[str, list[float]],
         query_sparse: tuple[list[int], list[float]] | None,
         rbac_filter: Optional[qmodels.Filter] = None,
         top_k: int = 20,
         prefetch_limit: int = 50,
     ) -> list[qmodels.ScoredPoint]:
         self._ensure()
+        dense_query = self._resolve_dense_query(query_dense)
         prefetches = [
             qmodels.Prefetch(
-                query=query_dense,
+                query=dense_query,
                 using="dense",
                 limit=prefetch_limit,
                 filter=rbac_filter,
@@ -129,14 +132,15 @@ class QdrantStore:
 
     def search_dense(
         self,
-        query: list[float],
+        query: Union[str, list[float]],
         rbac_filter: Optional[qmodels.Filter] = None,
         top_k: int = 20,
     ) -> list[qmodels.ScoredPoint]:
         self._ensure()
+        dense_query = self._resolve_dense_query(query)
         result = self.client.query_points(
             collection_name=self.collection,
-            query=query,
+            query=dense_query,
             using="dense",
             query_filter=rbac_filter,
             limit=top_k,
@@ -161,26 +165,32 @@ class QdrantStore:
         )
 
     def build_rbac_filter(self, user_id: str, org_role: str) -> qmodels.Filter | None:
-        """Build Qdrant filter for org-scoped RBAC.
-
-        Admins/owners see everything. Others see public docs + own uploaded docs.
-        """
         if org_role in ("owner", "admin"):
             return None
 
         return qmodels.Filter(
-            min_should=qmodels.MinShould(
-                conditions=[
-                    qmodels.FieldCondition(
-                        key="is_public_in_org",
-                        match=qmodels.MatchValue(value=True),
-                    ),
-                    qmodels.FieldCondition(
-                        key="uploaded_by_id",
-                        match=qmodels.MatchValue(value=user_id),
-                    ),
-                ],
-                min_count=1,
+            must=[
+                qmodels.FieldCondition(
+                    key="allowed_roles",
+                    match=qmodels.MatchValue(value=org_role),
+                ),
+            ],
+        )
+
+    def update_point_payload(self, document_id: str, payload: dict) -> None:
+        self._ensure()
+        self.client.set_payload(
+            collection_name=self.collection,
+            payload=payload,
+            points=qmodels.FilterSelector(
+                filter=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="document_id",
+                            match=qmodels.MatchValue(value=document_id),
+                        ),
+                    ],
+                ),
             ),
         )
 

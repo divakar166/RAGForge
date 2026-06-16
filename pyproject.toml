@@ -1,10 +1,12 @@
 [project]
 name = "ragforge"
 version = "0.1.0"
-description = "Production-grade RAG system with RBAC"
+description = "Production-grade RAG system with multi-tenant org model"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "bcrypt>=5.0.0",
+    "celery>=5.6.3",
     "httpx>=0.28.1",
     "numpy>=2.4.6",
     "pydantic-settings>=2.14.1",
@@ -12,17 +14,14 @@ dependencies = [
     "python-multipart>=0.0.32",
     "qdrant-client>=1.18.0",
     "rank-bm25>=0.2.2",
-    "sqlalchemy[asyncio]>=2.0.50",
-    "bcrypt>=5.0.0",
+    "supabase>=2.10.0",
 ]
 
 [dependency-groups]
 app = [
-    "alembic>=1.18.4",
-    "asyncpg>=0.31.0",
     "datasets>=3.0.0",
     "fastapi[standard]>=0.136.3",
-    "langchain-openai>=0.1.0",
+    "langchain-openapi>=0.1.0",
     "langfuse>=4.7.1",
     "pandas>=2.0.0",
     "python-jose[cryptography]>=3.5.0",
@@ -32,15 +31,12 @@ app = [
 ]
 
 worker = [
-    "celery>=5.6.3",
     "pdfplumber>=0.11.9",
-    "psycopg2-binary>=2.9.10",
     "python-docx>=1.2.0",
     "redis>=8.0.0",
 ]
 
 dev = [
-    "aiosqlite>=0.22.1",
     "httpx>=0.28.1",
     "mypy>=2.1.0",
     "pytest>=9.0.3",

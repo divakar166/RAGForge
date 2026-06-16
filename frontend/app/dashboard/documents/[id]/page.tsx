@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
+import { Download } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,12 +14,21 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+
+const statusVariant: Record<string, "default" | "secondary" | "destructive"> = {
+  indexed: "default",
+  uploaded: "secondary",
+  processing: "secondary",
+  failed: "destructive",
+};
+
+const AVAILABLE_ROLES = ["admin", "editor", "member"];
 
 export default function DocumentDetailPage() {
   const params = useParams();
@@ -30,7 +41,7 @@ export default function DocumentDetailPage() {
   });
 
   const accessMutation = useMutation({
-    mutationFn: (data: { is_public?: boolean }) =>
+    mutationFn: (data: { allowed_roles?: string[] }) =>
       api.setDocumentAccess(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["document", id] });
@@ -38,6 +49,9 @@ export default function DocumentDetailPage() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const [pendingRoles, setPendingRoles] = useState<string[] | null>(null);
+  const currentRoles = pendingRoles ?? doc?.allowed_roles ?? [];
 
   if (isLoading) {
     return (
@@ -51,6 +65,24 @@ export default function DocumentDetailPage() {
   if (!doc) {
     return <div>Document not found</div>;
   }
+
+  const toggleRole = (role: string) => {
+    const roles = pendingRoles ?? [...doc.allowed_roles];
+    const idx = roles.indexOf(role);
+    if (idx >= 0) {
+      roles.splice(idx, 1);
+    } else {
+      roles.push(role);
+    }
+    setPendingRoles(roles);
+  };
+
+  const saveAccess = () => {
+    if (pendingRoles) {
+      accessMutation.mutate({ allowed_roles: pendingRoles });
+      setPendingRoles(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -69,11 +101,30 @@ export default function DocumentDetailPage() {
             {doc.file_type} &middot; {(doc.file_size / 1024).toFixed(1)} KB
           </p>
         </div>
-        <Badge
-          variant={doc.status === "ready" ? "default" : "secondary"}
-        >
+        <Badge variant={statusVariant[doc.status] ?? "secondary"}>
           {doc.status}
         </Badge>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            try {
+              const blob = await api.downloadDocument(id);
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = doc.filename;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success("Download started");
+            } catch {
+              toast.error("Download failed");
+            }
+          }}
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Download
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -98,20 +149,25 @@ export default function DocumentDetailPage() {
             <CardTitle>Access Control</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="isPublic">Public document</Label>
-              <Switch
-                id="isPublic"
-                checked={doc.is_public}
-                onCheckedChange={(checked) =>
-                  accessMutation.mutate({ is_public: checked })
-                }
-              />
-            </div>
-            {doc.is_public && (
-              <p className="text-xs text-muted-foreground">
-                Anyone with access can view this document
-              </p>
+            <p className="text-xs text-muted-foreground">
+              Choose which roles can view this document
+            </p>
+            {AVAILABLE_ROLES.map((role) => (
+              <div key={role} className="flex items-center gap-2">
+                <Checkbox
+                  id={`role-${role}`}
+                  checked={currentRoles.includes(role)}
+                  onCheckedChange={() => toggleRole(role)}
+                />
+                <Label htmlFor={`role-${role}`} className="capitalize">
+                  {role}
+                </Label>
+              </div>
+            ))}
+            {pendingRoles && (
+              <Button onClick={saveAccess} size="sm" className="mt-2">
+                Save
+              </Button>
             )}
           </CardContent>
         </Card>

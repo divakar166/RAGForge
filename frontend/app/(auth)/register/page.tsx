@@ -19,16 +19,24 @@ import { toast } from "sonner";
 export default function RegisterPage() {
   const router = useRouter();
   const { register, error } = useAuth();
-  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [orgName, setOrgName] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await register({ email, password, full_name: fullName });
+      await register({
+        email,
+        password,
+        username,
+        org_name: orgName,
+        org_slug: orgSlug || username,
+      });
       toast.success("Account created successfully");
       router.push("/dashboard");
     } catch {
@@ -47,12 +55,12 @@ export default function RegisterPage() {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Full Name</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="name"
-              placeholder="John Doe"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
+              id="username"
+              placeholder="johndoe"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>
@@ -78,6 +86,28 @@ export default function RegisterPage() {
               required
               minLength={8}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="orgName">Organization Name</Label>
+            <Input
+              id="orgName"
+              placeholder="My Company"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="orgSlug">Organization Slug</Label>
+            <Input
+              id="orgSlug"
+              placeholder="my-company"
+              value={orgSlug}
+              onChange={(e) => setOrgSlug(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              URL-friendly identifier (defaults to username)
+            </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={submitting}>

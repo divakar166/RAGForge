@@ -1,10 +1,7 @@
 import logging
-import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from supabase import AsyncClient
 
 from app.core.security import (
     InvalidTokenError,
@@ -14,148 +11,176 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.db.models.invitation import Invitation
-from app.db.models.organization import Organization, OrganizationMember
-from app.db.models.user import User
 from app.schemas.auth import RegisterRequest
 
 logger = logging.getLogger(__name__)
 
 
-async def register_user(db: AsyncSession, req: RegisterRequest) -> tuple[User, Organization]:
-    existing = await db.execute(
-        select(User).where((User.email == req.email) | (User.username == req.username))
+async def register_user(supabase: AsyncClient, req: RegisterRequest) -> tuple[dict, dict]:
+    existing = await (
+        supabase.table("users")
+        .select("id")
+        .or_(f"email.eq.{req.email},username.eq.{req.username}")
+        .limit(1)
+        .execute()
     )
-    if existing.scalar_one_or_none():
+    if existing.data:
         raise ValueError("Email or username already taken")
 
-    user = User(
-        email=req.email,
-        username=req.username,
-        hashed_password=hash_password(req.password),
+    user_resp = await (
+        supabase.table("users")
+        .insert({
+            "email": req.email,
+            "username": req.username,
+            "hashed_password": hash_password(req.password),
+        })
+        .select("*")
+        .execute()
     )
-    db.add(user)
-    await db.flush()
+    user = user_resp.data[0]
 
-    org = Organization(
-        name=req.org_name,
-        slug=req.org_slug,
-        owner_id=user.id,
+    org_resp = await (
+        supabase.table("organizations")
+        .insert({
+            "name": req.org_name,
+            "slug": req.org_slug,
+            "owner_id": user["id"],
+        })
+        .select("*")
+        .execute()
     )
-    db.add(org)
-    await db.flush()
+    org = org_resp.data[0]
 
-    member = OrganizationMember(
-        organization_id=org.id,
-        user_id=user.id,
-        role="owner",
-    )
-    db.add(member)
-    await db.flush()
+    await supabase.table("organization_members").insert({
+        "organization_id": org["id"],
+        "user_id": user["id"],
+        "role": "owner",
+    }).execute()
 
     return user, org
 
 
 async def register_with_invitation(
-    db: AsyncSession,
+    supabase: AsyncClient,
     token: str,
     username: str,
     password: str,
     email: str,
-) -> tuple[User, Organization, OrganizationMember]:
-    result = await db.execute(
-        select(Invitation)
-        .options(selectinload(Invitation.organization))
-        .where(Invitation.token == token, Invitation.accepted_at.is_(None))
+) -> tuple[dict, dict, dict]:
+    invite_resp = await (
+        supabase.table("invitations")
+        .select("*, organization:organization_id(*)")
+        .eq("token", token)
+        .is_("accepted_at", "null")
+        .single()
+        .execute()
     )
-    invitation = result.scalar_one_or_none()
+    invitation = invite_resp.data
     if not invitation:
         raise ValueError("Invalid or expired invitation token")
 
-    if invitation.expires_at < datetime.now(timezone.utc):
+    if datetime.fromisoformat(invitation["expires_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
         raise ValueError("Invitation has expired")
 
-    existing = await db.execute(select(User).where(User.email == email))
-    if existing.scalar_one_or_none():
+    existing = await supabase.table("users").select("id").eq("email", email).limit(1).execute()
+    if existing.data:
         raise ValueError("Email already registered")
 
-    user = User(
-        email=email,
-        username=username,
-        hashed_password=hash_password(password),
+    user_resp = await (
+        supabase.table("users")
+        .insert({
+            "email": email,
+            "username": username,
+            "hashed_password": hash_password(password),
+        })
+        .select("*")
+        .execute()
     )
-    db.add(user)
-    await db.flush()
+    user = user_resp.data[0]
 
-    member = OrganizationMember(
-        organization_id=invitation.organization_id,
-        user_id=user.id,
-        role=invitation.role,
+    member_resp = await (
+        supabase.table("organization_members")
+        .insert({
+            "organization_id": invitation["organization_id"],
+            "user_id": user["id"],
+            "role": invitation["role"],
+        })
+        .select("*")
+        .execute()
     )
-    db.add(member)
-    await db.flush()
+    member = member_resp.data[0]
 
-    invitation.accepted_at = datetime.now(timezone.utc)
-    await db.flush()
+    await supabase.table("invitations").update({
+        "accepted_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", invitation["id"]).execute()
 
-    return user, invitation.organization, member
+    return user, invitation.get("organization"), member
 
 
-async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
-    result = await db.execute(
-        select(User)
-        .options(selectinload(User.memberships))
-        .where((User.username == username) | (User.email == username))
+async def authenticate_user(supabase: AsyncClient, username: str, password: str) -> dict | None:
+    user_resp = await (
+        supabase.table("users")
+        .select("*")
+        .or_(f"username.eq.{username},email.eq.{username}")
+        .limit(1)
+        .execute()
     )
-    user = result.scalar_one_or_none()
-    if not user or not verify_password(password, user.hashed_password):
+    user = user_resp.data[0] if user_resp.data else None
+    if not user or not verify_password(password, user["hashed_password"]):
         return None
     return user
 
 
-async def login(db: AsyncSession, username: str, password: str) -> dict | None:
-    user = await authenticate_user(db, username, password)
+async def login(supabase: AsyncClient, username: str, password: str) -> dict | None:
+    user = await authenticate_user(supabase, username, password)
     if not user:
         return None
 
+    members_resp = await (
+        supabase.table("organization_members")
+        .select("*")
+        .eq("user_id", user["id"])
+        .eq("is_active", True)
+        .limit(1)
+        .execute()
+    )
+
     extra_claims = {}
-    if user.memberships:
-        primary = user.memberships[0]
-        extra_claims["org_id"] = str(primary.organization_id)
-        extra_claims["org_role"] = primary.role
+    if members_resp.data:
+        primary = members_resp.data[0]
+        extra_claims["org_id"] = primary["organization_id"]
+        extra_claims["org_role"] = primary["role"]
 
     return {
-        "access_token": create_access_token(str(user.id), extra_claims=extra_claims),
-        "refresh_token": create_refresh_token(str(user.id)),
+        "access_token": create_access_token(user["id"], extra_claims=extra_claims),
+        "refresh_token": create_refresh_token(user["id"]),
         "token_type": "bearer",
     }
 
 
-async def login_with_org(db: AsyncSession, user_id: str, org_id: str) -> dict | None:
-    try:
-        user_uuid = uuid.UUID(user_id)
-        org_uuid = uuid.UUID(org_id)
-    except ValueError:
-        return None
-
-    result = await db.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.organization_id == org_uuid,
-            OrganizationMember.user_id == user_uuid,
-            OrganizationMember.is_active,
-        )
+async def login_with_org(supabase: AsyncClient, user_id: str, org_id: str) -> dict | None:
+    member_resp = await (
+        supabase.table("organization_members")
+        .select("*, organization:organization_id(*)")
+        .eq("organization_id", org_id)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .single()
+        .execute()
     )
-    member = result.scalar_one_or_none()
+    member = member_resp.data
     if not member:
         return None
+
+    org = member.get("organization", {})
 
     return {
         "access_token": create_access_token(
             user_id,
             extra_claims={
-                "org_id": str(member.organization_id),
-                "org_role": member.role,
-                "org_name": member.organization.name,
+                "org_id": org_id,
+                "org_role": member["role"],
+                "org_name": org.get("name", ""),
             },
         ),
         "refresh_token": create_refresh_token(user_id),
@@ -163,7 +188,7 @@ async def login_with_org(db: AsyncSession, user_id: str, org_id: str) -> dict | 
     }
 
 
-async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict | None:
+async def refresh_access_token(supabase: AsyncClient, refresh_token: str) -> dict | None:
     try:
         payload = decode_token(refresh_token)
     except InvalidTokenError:
@@ -175,46 +200,56 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> dict | N
     if not user_id or token_type != "refresh":
         return None
 
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        return None
-
-    result = await db.execute(
-        select(User)
-        .options(selectinload(User.memberships))
-        .where(User.id == user_uuid, User.is_active.is_(True))
+    user_resp = await (
+        supabase.table("users")
+        .select("*")
+        .eq("id", user_id)
+        .eq("is_active", True)
+        .limit(1)
+        .execute()
     )
-    user = result.scalar_one_or_none()
+    user = user_resp.data[0] if user_resp.data else None
     if not user:
         return None
 
+    members_resp = await (
+        supabase.table("organization_members")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .limit(1)
+        .execute()
+    )
+
     extra_claims = {}
-    if user.memberships:
-        primary = user.memberships[0]
-        extra_claims["org_id"] = str(primary.organization_id)
-        extra_claims["org_role"] = primary.role
+    if members_resp.data:
+        primary = members_resp.data[0]
+        extra_claims["org_id"] = primary["organization_id"]
+        extra_claims["org_role"] = primary["role"]
 
     return {
-        "access_token": create_access_token(str(user.id), extra_claims=extra_claims),
-        "refresh_token": create_refresh_token(str(user.id)),
+        "access_token": create_access_token(user_id, extra_claims=extra_claims),
+        "refresh_token": create_refresh_token(user_id),
         "token_type": "bearer",
     }
 
 
-async def get_user_orgs(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
-    result = await db.execute(
-        select(OrganizationMember)
-        .options(selectinload(OrganizationMember.organization))
-        .where(OrganizationMember.user_id == user_id, OrganizationMember.is_active)
+async def get_user_orgs(supabase: AsyncClient, user_id: str) -> list[dict]:
+    members_resp = await (
+        supabase.table("organization_members")
+        .select("*, organization:organization_id(*)")
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .execute()
     )
-    members = result.scalars().all()
+    members = members_resp.data or []
     return [
         {
-            "id": str(m.organization.id),
-            "name": m.organization.name,
-            "slug": m.organization.slug,
-            "role": m.role,
+            "id": m.get("organization", {}).get("id"),
+            "name": m.get("organization", {}).get("name"),
+            "slug": m.get("organization", {}).get("slug"),
+            "role": m["role"],
         }
         for m in members
+        if m.get("organization")
     ]

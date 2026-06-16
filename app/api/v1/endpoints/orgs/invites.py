@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+
+from fastapi import APIRouter, Depends, Request
+from supabase import AsyncClient
 
 from app.core.deps import OrganizationContext, require_org_role
-from app.db.models.invitation import Invitation
-from app.db.session import get_db
+from app.db.supabase import get_supabase
 from app.schemas.organization import InvitationResponse, InviteRequest
 from app.services import orgs as orgs_service
 from app.services.audit import log_action
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/invites", tags=["orgs-invites"])
 
@@ -16,48 +18,57 @@ router = APIRouter(prefix="/invites", tags=["orgs-invites"])
 async def invite_member(
     req: InviteRequest,
     ctx: OrganizationContext = Depends(require_org_role("owner", "admin")),
-    db: AsyncSession = Depends(get_db),
+    supabase: AsyncClient = Depends(get_supabase),
+    request: Request = None,
 ):
     invitation = await orgs_service.invite_member(
-        db, ctx.organization.id, req.email, req.role, ctx.member.user_id,
+        supabase, ctx.organization["id"], req.email, req.role, ctx.member["user_id"],
     )
 
     await log_action(
-        db, ctx.member.user_id, "invite:create",
-        resource_type="invitation", resource_id=invitation.id,
+        supabase, ctx.member["user_id"], "invite:create",
+        resource_type="invitation", resource_id=invitation["id"],
         details={"email": req.email, "role": req.role},
-        organization_id=ctx.organization.id,
+        organization_id=ctx.organization["id"],
     )
 
+    base_url = f"{request.url.scheme}://{request.url.hostname}" if request else "http://localhost:3000"
+    if request and request.url.port:
+        base_url += f":{request.url.port}"
+    invite_url = f"{base_url}/invite?token={invitation['token']}"
+    logger.info("Invitation created — URL: %s", invite_url)
+
     return InvitationResponse(
-        id=str(invitation.id),
-        organization_id=str(invitation.organization_id),
-        email=invitation.email,
-        role=invitation.role,
-        expires_at=invitation.expires_at,
+        id=invitation["id"],
+        organization_id=invitation["organization_id"],
+        email=invitation["email"],
+        role=invitation["role"],
+        token=invitation["token"],
+        expires_at=invitation.get("expires_at"),
     )
 
 
 @router.get("")
 async def list_invitations(
     ctx: OrganizationContext = Depends(require_org_role("owner", "admin")),
-    db: AsyncSession = Depends(get_db),
+    supabase: AsyncClient = Depends(get_supabase),
 ):
-    result = await db.execute(
-        select(Invitation).where(
-            Invitation.organization_id == ctx.organization.id,
-            Invitation.accepted_at.is_(None),
-        )
+    result = await (
+        supabase.table("invitations")
+        .select("*")
+        .eq("organization_id", ctx.organization["id"])
+        .is_("accepted_at", "null")
+        .execute()
     )
-    invitations = result.scalars().all()
     return [
         InvitationResponse(
-            id=str(i.id),
-            organization_id=str(i.organization_id),
-            email=i.email,
-            role=i.role,
-            expires_at=i.expires_at,
-            accepted_at=i.accepted_at,
+            id=i["id"],
+            organization_id=i["organization_id"],
+            email=i["email"],
+            role=i["role"],
+            token=i["token"],
+            expires_at=i.get("expires_at"),
+            accepted_at=i.get("accepted_at"),
         )
-        for i in invitations
+        for i in (result.data or [])
     ]

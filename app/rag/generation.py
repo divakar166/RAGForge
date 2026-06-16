@@ -28,11 +28,12 @@ def build_context(results: list[RetrievalResult]) -> str:
     return "\n\n".join(sections)
 
 
-def build_messages(query: str, context: str) -> list[dict[str, str]]:
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"},
-    ]
+def build_messages(query: str, context: str, history_context: str = "") -> list[dict[str, str]]:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if history_context:
+        messages.append({"role": "system", "content": history_context})
+    messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"})
+    return messages
 
 
 @observe(name="generate_answer")
@@ -41,10 +42,11 @@ async def generate_answer(
     results: list[RetrievalResult],
     llm_client: LLMClient | None = None,
     stream: bool = False,
+    history_context: str = "",
 ) -> dict[str, Any]:
     """Generate an answer with citations from retrieval results."""
     context = build_context(results)
-    messages = build_messages(query, context)
+    messages = build_messages(query, context, history_context)
 
     client = llm_client or LLMClient()
     response = await client.generate(messages, stream=stream)

@@ -1,21 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ragforge
-      POSTGRES_PASSWORD: ragforge
-      POSTGRES_DB: ragforge
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ragforge"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -27,39 +10,6 @@ services:
       timeout: 5s
       retries: 5
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    restart: unless-stopped
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      QDRANT__SERVICE__GRPC_PORT: 6334
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - tei_data:/data
-    environment:
-      MODEL_ID: sentence-transformers/all-MiniLM-L6-v2
-    command: --model-id sentence-transformers/all-MiniLM-L6-v2 --port 8080
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
   app:
     build:
       context: .
@@ -68,22 +18,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://ragforge:ragforge@postgres:5432/ragforge
       REDIS_URL: redis://redis:6379/0
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
-      TEI_ENDPOINT: http://tei:8080
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     env_file:
       - .env
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      qdrant:
-        condition: service_started
     volumes:
       - uploads_data:/app/uploads
     healthcheck:
@@ -99,22 +41,14 @@ services:
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg2://ragforge:ragforge@postgres:5432/ragforge
       REDIS_URL: redis://redis:6379/0
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
-      TEI_ENDPOINT: http://tei:8080
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     env_file:
       - .env
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      qdrant:
-        condition: service_started
     volumes:
       - uploads_data:/app/uploads
 
@@ -131,7 +65,4 @@ services:
       - app
 
 volumes:
-  postgres_data:
-  qdrant_data:
-  tei_data:
   uploads_data:

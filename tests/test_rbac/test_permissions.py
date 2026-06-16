@@ -1,13 +1,10 @@
 """Tests for org-based RBAC via require_org_role."""
 
-from unittest.mock import MagicMock
-
 import pytest
 from fastapi import HTTPException
 
 from app.core.deps import OrganizationContext, require_org_role
 from app.core.security import InvalidTokenError, create_access_token, decode_token
-from app.db.models.organization import OrganizationMember
 
 
 class TestOrgRole:
@@ -20,22 +17,20 @@ class TestOrgRole:
     @pytest.mark.asyncio
     async def test_require_org_role_checks_role(self):
         dep = require_org_role("admin")
-        member = MagicMock(spec=OrganizationMember)
-        member.role = "viewer"
-        member.user = MagicMock(is_superuser=False)
-        ctx = OrganizationContext(organization=None, member=member, qdrant_store=None)
+        member = {"role": "viewer", "user_id": "u1"}
+        user = {"is_superuser": False, "id": "u1"}
+        ctx = OrganizationContext(organization={}, member=member, qdrant_store=None)
         with pytest.raises(HTTPException) as exc:
-            await dep(ctx)
+            await dep(ctx, user)
         assert exc.value.status_code == 403
 
     @pytest.mark.asyncio
     async def test_require_org_role_allows_valid_role(self):
         dep = require_org_role("owner", "admin")
-        member = MagicMock(spec=OrganizationMember)
-        member.role = "admin"
-        member.user = MagicMock(is_superuser=False)
-        ctx = OrganizationContext(organization=None, member=member, qdrant_store=None)
-        result = await dep(ctx)
+        member = {"role": "admin", "user_id": "u1"}
+        user = {"is_superuser": False, "id": "u1"}
+        ctx = OrganizationContext(organization={}, member=member, qdrant_store=None)
+        result = await dep(ctx, user)
         assert result is ctx
 
 

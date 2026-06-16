@@ -35,9 +35,10 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "@/lib/format";
 import { useRouter } from "next/navigation";
 
-function statusBadge(status: Document["status"]) {
+function statusBadge(status: string) {
   const variants: Record<string, "default" | "secondary" | "destructive"> = {
-    ready: "default",
+    indexed: "default",
+    uploaded: "secondary",
     processing: "secondary",
     failed: "destructive",
   };
@@ -49,7 +50,6 @@ export default function DocumentsPage() {
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [isPublic, setIsPublic] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["documents"],
@@ -59,7 +59,7 @@ export default function DocumentsPage() {
   const uploadMutation = useMutation({
     mutationFn: () => {
       if (!file) throw new Error("No file selected");
-      return api.uploadDocument(file, isPublic);
+      return api.uploadDocument(file);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -106,16 +106,6 @@ export default function DocumentsPage() {
                   accept=".pdf,.docx,.txt,.md,.html"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isPublic"
-                  checked={isPublic}
-                  onChange={(e) => setIsPublic(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <Label htmlFor="isPublic">Make public (all users can access)</Label>
-              </div>
               <Button
                 onClick={() => uploadMutation.mutate()}
                 disabled={!file || uploadMutation.isPending}
@@ -139,7 +129,7 @@ export default function DocumentsPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : data?.items?.length === 0 ? (
+          ) : !data?.items?.length ? (
             <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
               <FileText className="h-12 w-12" />
               <p>No documents yet. Upload your first document.</p>
@@ -167,11 +157,13 @@ export default function DocumentsPage() {
                     <TableCell>{doc.file_type}</TableCell>
                     <TableCell>{statusBadge(doc.status)}</TableCell>
                     <TableCell>
-                      {doc.is_public ? (
-                        <Badge variant="secondary">Public</Badge>
-                      ) : (
-                        <Badge variant="outline">Restricted</Badge>
-                      )}
+                      {doc.allowed_roles?.length
+                        ? doc.allowed_roles.map((r) => (
+                            <Badge key={r} variant="secondary" className="mr-1 capitalize">
+                              {r}
+                            </Badge>
+                          ))
+                        : <Badge variant="outline">None</Badge>}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {formatDistanceToNow(doc.created_at)}

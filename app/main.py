@@ -30,6 +30,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         await flush_langfuse()
 
     await rate_limiter.close()
+
+    from app.db.supabase import close_supabase
+    await close_supabase()
+
     logger.info("Shutdown complete")
 
 

@@ -10,17 +10,19 @@ class Settings(BaseSettings):
     APP_NAME: str = "RAGForge"
     DEBUG: bool = False
 
-    # PostgreSQL
-    DATABASE_URL: str = "postgresql+asyncpg://ragforge:ragforge@localhost:5432/ragforge"
+    # Supabase
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_KEY: str = ""
+    SUPABASE_MODE: bool = False  # set to true when Supabase is configured
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # Qdrant
-    QDRANT_HOST: str = "localhost"
-    QDRANT_PORT: int = 6333
-    QDRANT_COLLECTION: str = "documents"
+    # Qdrant Cloud
+    QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: Optional[str] = None
+    QDRANT_COLLECTION: str = "documents"
+    QDRANT_CLOUD_INFERENCE: bool = False  # set true when using Qdrant Cloud inference API
 
     # Auth / JWT
     SECRET_KEY: str = "change-me-in-production"
@@ -35,10 +37,10 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 4096
     LLM_TEMPERATURE: float = 0.1
 
-    # Embedding (TEI)
-    TEI_ENDPOINT: str = "http://localhost:8080"
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # Embedding
     EMBEDDING_DIM: int = 384
+    EMBEDDING_MODEL: str = "sentence-transformers/all-minilm-l6-v2"
+    SPARSE_MODEL: str = "bm25"
 
     # RAG Pipeline
     CHUNK_DEFAULT_STRATEGY: str = "recursive"

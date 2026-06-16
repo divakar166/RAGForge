@@ -56,5 +56,6 @@ class InvitationResponse(BaseModel):
     organization_id: str
     email: str
     role: str
+    token: str
     expires_at: datetime
     accepted_at: datetime | None = None

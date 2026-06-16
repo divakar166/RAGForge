@@ -10,7 +10,7 @@ class DocumentResponse(BaseModel):
     file_type: str
     file_size: int
     status: str
-    is_public_in_org: bool
+    allowed_roles: list[str] = ["member"]
     uploaded_by_id: str
     organization_id: str
     collection_id: str | None = None
@@ -20,8 +20,7 @@ class DocumentResponse(BaseModel):
 
 
 class DocumentAccessRequest(BaseModel):
-    is_public_in_org: bool | None = None
-    allowed_user_ids: list[str] = []
+    allowed_roles: list[str] | None = None
 
 
 class PaginatedDocumentResponse(BaseModel):

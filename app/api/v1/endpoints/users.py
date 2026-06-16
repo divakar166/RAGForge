@@ -1,51 +1,43 @@
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import AsyncClient
 
 from app.core.deps import get_current_admin
-from app.db.models.user import User
-from app.db.session import get_db
+from app.db.supabase import get_supabase
 from app.schemas.user import UserResponse, UserUpdate
 from app.services.audit import log_action
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _to_user_response(u: User) -> UserResponse:
+def _to_user_response(u: dict) -> UserResponse:
     return UserResponse(
-        id=str(u.id),
-        email=u.email,
-        username=u.username,
-        is_active=u.is_active,
-        is_superuser=u.is_superuser,
-        created_at=u.created_at,
-        updated_at=u.updated_at,
+        id=u["id"],
+        email=u["email"],
+        username=u["username"],
+        is_active=u["is_active"],
+        is_superuser=u["is_superuser"],
+        created_at=u.get("created_at"),
+        updated_at=u.get("updated_at"),
     )
 
 
 @router.get("")
 async def list_users(
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin),
+    supabase: AsyncClient = Depends(get_supabase),
+    admin: dict = Depends(get_current_admin),
 ):
-    result = await db.execute(select(User).order_by(User.username))
-    users = result.scalars().all()
-    return [_to_user_response(u) for u in users]
+    result = await supabase.table("users").select("*").order("username").execute()
+    return [_to_user_response(u) for u in (result.data or [])]
 
 
 @router.get("/{user_id}")
 async def get_user(
     user_id: str,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin),
+    supabase: AsyncClient = Depends(get_supabase),
+    admin: dict = Depends(get_current_admin),
 ):
-    try:
-        result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID")
-    user = result.scalar_one_or_none()
+    user_resp = await supabase.table("users").select("*").eq("id", user_id).single().execute()
+    user = user_resp.data
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return _to_user_response(user)
@@ -55,21 +47,21 @@ async def get_user(
 async def update_user(
     user_id: str,
     req: UserUpdate,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin),
+    supabase: AsyncClient = Depends(get_supabase),
+    admin: dict = Depends(get_current_admin),
 ):
-    try:
-        result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID")
-    user = result.scalar_one_or_none()
-    if not user:
+    user_resp = await supabase.table("users").select("*").eq("id", user_id).single().execute()
+    if not user_resp.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    update_data = {}
     if req.is_active is not None:
-        user.is_active = req.is_active
+        update_data["is_active"] = req.is_active
     if req.is_superuser is not None:
-        user.is_superuser = req.is_superuser
+        update_data["is_superuser"] = req.is_superuser
 
-    await log_action(db, admin.id, "user:update", "user", user_id)
+    if update_data:
+        await supabase.table("users").update(update_data).eq("id", user_id).execute()
+
+    await log_action(supabase, admin["id"], "user:update", resource_type="user", resource_id=user_id)
     return {"detail": "User updated"}

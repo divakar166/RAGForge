@@ -135,7 +135,7 @@ function SearchResults({
         </Button>
       </div>
       {results.results.map((r, i) => (
-        <ResultCard key={r.id} result={r} rank={i + 1} />
+        <ResultCard key={`${r.document_id}-${r.chunk_index}`} result={r} rank={i + 1} />
       ))}
     </div>
   );
@@ -145,7 +145,7 @@ function ResultCard({
   result,
   rank,
 }: {
-  result: { id: string; score: number; text: string; document_filename: string };
+  result: { score: number; text: string; document_filename: string };
   rank: number;
 }) {
   return (
@@ -201,9 +201,9 @@ function RAGAnswer({
           </CardHeader>
           <CardContent className="space-y-2">
             <ScrollArea className="max-h-64">
-              {answer.citations.map((c) => (
+              {answer.citations.map((c, i) => (
                 <div
-                  key={c.id}
+                  key={`${c.document_id}-${i}`}
                   className="rounded border p-3 text-sm mb-2"
                 >
                   <div className="flex items-center gap-2 mb-1">

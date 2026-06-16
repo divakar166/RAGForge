@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from app.core.config import settings
 from app.monitoring.tracing import observe
-from app.rag.embeddings import TEIEmbeddingProvider
+from app.rag.embeddings import OpenAIEmbeddingProvider
 from app.rag.reranker import Reranker
 from app.rag.sparse import BM25SparseEncoder
 from app.rag.vector_store import QdrantStore
@@ -29,12 +29,12 @@ class RetrievalPipeline:
 
     def __init__(
         self,
-        embed_provider: TEIEmbeddingProvider | None = None,
+        embed_provider: OpenAIEmbeddingProvider | None = None,
         sparse_encoder: BM25SparseEncoder | None = None,
         vector_store: QdrantStore | None = None,
         reranker: Reranker | None = None,
     ):
-        self.embed_provider = embed_provider or TEIEmbeddingProvider()
+        self.embed_provider = embed_provider or OpenAIEmbeddingProvider()
         self.sparse_encoder = sparse_encoder or BM25SparseEncoder()
         self.vector_store = vector_store or QdrantStore()
         self.reranker = reranker or Reranker()
@@ -47,8 +47,11 @@ class RetrievalPipeline:
         org_role: str = "member",
         top_k: int = 5,
     ) -> list[RetrievalResult]:
-        dense_result = await self.embed_provider.embed([query])
-        query_dense = dense_result["embeddings"][0]
+        if settings.QDRANT_CLOUD_INFERENCE:
+            query_dense: str | list[float] = query
+        else:
+            dense_result = await self.embed_provider.embed([query])
+            query_dense = dense_result["embeddings"][0]
 
         if self.sparse_encoder.is_fitted:
             query_sparse = self.sparse_encoder.encode(query)

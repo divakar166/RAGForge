@@ -36,13 +36,13 @@ export default function DashboardPage() {
     },
     {
       title: "Ready Documents",
-      value: docs?.items?.filter((d) => d.status === "ready").length ?? 0,
+      value: docs?.items?.filter((d) => d.status === "indexed").length ?? 0,
       icon: Activity,
       loading: docsLoading,
     },
     {
       title: "Processing",
-      value: docs?.items?.filter((d) => d.status === "processing").length ?? 0,
+      value: docs?.items?.filter((d) => d.status === "processing" || d.status === "uploaded").length ?? 0,
       icon: Clock,
       loading: docsLoading,
     },

@@ -1,33 +1,32 @@
-import uuid
+import logging
+from datetime import datetime, timezone
+from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import AsyncClient
 
-from app.db.models.audit_log import AuditLog
+logger = logging.getLogger(__name__)
 
 
 async def log_action(
-    db: AsyncSession,
-    actor_id: uuid.UUID | str | None = None,
-    action: str = "",
-    resource_type: str | None = None,
-    resource_id: uuid.UUID | str | None = None,
-    details: dict | None = None,
-    ip_address: str | None = None,
-    organization_id: uuid.UUID | str | None = None,
+    supabase: AsyncClient,
+    actor_id: Optional[str],
+    action: str,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    details: Optional[dict] = None,
+    organization_id: Optional[str] = None,
+    ip_address: Optional[str] = None,
 ) -> None:
-    log = AuditLog(
-        actor_id=_to_uuid(actor_id) if actor_id else None,
-        action=action,
-        resource_type=resource_type,
-        resource_id=_to_uuid(resource_id) if resource_id else None,
-        details=details,
-        ip_address=ip_address,
-        organization_id=_to_uuid(organization_id) if organization_id else None,
-    )
-    db.add(log)
-
-
-def _to_uuid(value: uuid.UUID | str) -> uuid.UUID:
-    if isinstance(value, uuid.UUID):
-        return value
-    return uuid.UUID(value)
+    try:
+        await supabase.table("audit_logs").insert({
+            "actor_id": actor_id,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "details": details,
+            "organization_id": organization_id,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception:
+        logger.exception("Failed to log audit action: %s", action)

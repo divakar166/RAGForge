@@ -1,7 +1,4 @@
-"""Abstract embedding provider and TEI implementation.
-
-Supports TEI (via native API) and any OpenAI-compatible API.
-"""
+"""Embedding provider using any OpenAI-compatible API (OpenAI, vLLM, Ollama, Qdrant Cloud inference, etc.)."""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -14,7 +11,6 @@ from app.core.config import settings
 class EmbeddingProvider(ABC):
     @abstractmethod
     async def embed(self, texts: list[str]) -> dict[str, Any]:
-        """Return dict with 'embeddings' key (list of list[float])."""
         ...
 
     async def embed_one(self, text: str) -> list[float]:
@@ -22,57 +18,7 @@ class EmbeddingProvider(ABC):
         return result["embeddings"][0]
 
 
-class TEIEmbeddingProvider(EmbeddingProvider):
-    """Text Embeddings Inference (HuggingFace) provider.
-
-    Uses TEI's native /embed endpoint.
-    Also supports the OpenAI-compatible /v1/embeddings endpoint.
-    """
-
-    def __init__(
-        self,
-        endpoint: str = "",
-        model: str = "",
-        use_openai_compat: bool = False,
-    ):
-        self.endpoint = (endpoint or settings.TEI_ENDPOINT).rstrip("/")
-        self.model = model or settings.EMBEDDING_MODEL
-        self.use_openai_compat = use_openai_compat
-
-    async def embed(self, texts: list[str]) -> dict[str, Any]:
-        if self.use_openai_compat:
-            return await self._embed_openai(texts)
-        return await self._embed_native(texts)
-
-    async def _embed_native(self, texts: list[str]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{self.endpoint}/embed",
-                json={"inputs": texts},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            # TEI returns a list of lists
-            if isinstance(data, list):
-                return {"embeddings": data, "model": self.model}
-            # TEI may return {"data": [...]}
-            return {"embeddings": data.get("data", []), "model": self.model}
-
-    async def _embed_openai(self, texts: list[str]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{self.endpoint}/v1/embeddings",
-                json={"input": texts, "model": self.model},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            embeddings = [item["embedding"] for item in data.get("data", [])]
-            return {"embeddings": embeddings, "model": data.get("model", self.model)}
-
-
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    """OpenAI-compatible embedding API (works with OpenAI, vLLM, etc.)."""
-
     def __init__(
         self,
         base_url: str = "",

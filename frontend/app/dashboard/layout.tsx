@@ -14,6 +14,11 @@ import {
   Menu,
   Sun,
   Moon,
+  Building2,
+  UserPlus,
+  ClipboardList,
+  FolderKanban,
+  MessageSquare,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +29,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth-context";
@@ -35,20 +42,24 @@ import { useRouter } from "next/navigation";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/documents", label: "Documents", icon: FileText },
+  { href: "/dashboard/collections", label: "Collections", icon: FolderKanban },
+  { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/history", label: "History", icon: History },
 ];
 
 const adminItems = [
-  { href: "/dashboard/admin/users", label: "Users", icon: Users },
-  { href: "/dashboard/admin/roles", label: "Roles", icon: Shield },
+  { href: "/dashboard/admin/members", label: "Members", icon: Users },
+  { href: "/dashboard/admin/invites", label: "Invitations", icon: UserPlus },
+  { href: "/dashboard/admin/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/dashboard/admin/evaluate", label: "Evaluate", icon: BarChart3 },
 ];
 
 function SidebarContent() {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const isAdmin = user?.roles?.some((r) => r.permissions.includes("admin:full"));
+  const { user, activeOrg } = useAuth();
+  const isOrgAdmin = activeOrg?.role === "owner" || activeOrg?.role === "admin";
+  const isSuperuser = user?.is_superuser;
 
   return (
     <div className="flex h-full flex-col">
@@ -79,7 +90,7 @@ function SidebarContent() {
             );
           })}
         </nav>
-        {isAdmin && (
+        {(isOrgAdmin || isSuperuser) && (
           <>
             <div className="mt-6 mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Admin
@@ -118,7 +129,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, activeOrg, loading, logout, switchOrg } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -161,6 +172,32 @@ export default function DashboardLayout({
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 items-center justify-end gap-4 border-b bg-card px-6">
+          {/* Org selector */}
+          {user.organizations.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="outline" size="sm" className="gap-2 mr-auto" />}
+              >
+                <Building2 className="h-4 w-4" />
+                <span className="text-sm">{activeOrg?.name ?? "Select Org"}</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {user.organizations.map((org) => (
+                  <DropdownMenuItem
+                    key={org.id}
+                    onClick={() => switchOrg(org.id)}
+                    disabled={org.id === activeOrg?.id}
+                  >
+                    {org.name}
+                    <span className="ml-2 text-xs text-muted-foreground">({org.role})</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
@@ -171,19 +208,17 @@ export default function DashboardLayout({
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" className="gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs">
-                      {user?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm font-medium hidden sm:inline">
-                    {user?.full_name ?? "User"}
-                  </span>
-                </Button>
-              }
-            />
+              render={<Button variant="ghost" className="gap-2" />}
+            >
+              <Avatar className="h-7 w-7">
+                <AvatarFallback className="text-xs">
+                  {user?.username?.charAt(0)?.toUpperCase() ?? "?"}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-sm font-medium hidden sm:inline">
+                {user?.username ?? "User"}
+              </span>
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => logout()}>
                 <LogOut className="mr-2 h-4 w-4" />

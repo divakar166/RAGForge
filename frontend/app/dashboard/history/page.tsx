@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Search, MessageSquare, Clock } from "lucide-react";
+import { MessageSquare, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,17 +49,12 @@ export default function HistoryPage() {
                   className="flex items-center justify-between rounded border p-3"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {item.type === "search" ? (
-                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
+                    <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">
                         {item.query}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {item.type === "search" ? "Search" : "Ask RAG"} &middot;{" "}
                         {formatDistanceToNow(item.created_at)}
                       </p>
                     </div>
