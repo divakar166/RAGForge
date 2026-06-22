@@ -104,3 +104,38 @@ def require_org_role(*roles: str):
             )
         return ctx
     return checker
+
+
+def require_org_permission(permission: str):
+    """Dependency factory: require a specific permission via the member's role."""
+    async def checker(
+        ctx: OrganizationContext = Depends(get_org_context),
+        supabase: AsyncClient = Depends(get_supabase),
+        user: dict = Depends(get_current_user),
+    ) -> OrganizationContext:
+        if user.get("is_superuser"):
+            return ctx
+        role_name = ctx.member.get("role", "")
+        if role_name == "owner":
+            return ctx
+        role_resp = await (
+            supabase.table("organization_roles")
+            .select("permissions")
+            .eq("organization_id", ctx.organization["id"])
+            .eq("name", role_name)
+            .limit(1)
+            .execute()
+        )
+        if not role_resp.data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{role_name}' not found in organization roles",
+            )
+        permissions = role_resp.data[0].get("permissions", [])
+        if permission not in permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires permission: {permission}",
+            )
+        return ctx
+    return checker

@@ -1,9 +1,18 @@
 """RAGAS evaluation endpoint — run quality metrics on the pipeline."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.deps import get_current_user
-from app.evaluation import compute_ragas_metrics, load_golden_dataset
+from app.evaluation import (
+    compute_ragas_metrics,
+    load_golden_dataset,
+    run_pipeline_for_samples,
+    save_golden_dataset,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/evaluate", tags=["evaluate"])
 
@@ -15,12 +24,17 @@ async def run_evaluation(
     if not user.get("is_superuser"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
-    samples = load_golden_dataset("data/golden_dataset.json")
+    samples = load_golden_dataset()
     if not samples:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No golden dataset found.",
         )
+
+    logger.info("Running pipeline on %d samples", len(samples))
+    samples = await run_pipeline_for_samples(samples, org_id="global")
+
+    save_golden_dataset(samples)
 
     report = await compute_ragas_metrics(samples)
     return [
@@ -40,5 +54,5 @@ async def get_dataset_info(
 ):
     if not user.get("is_superuser"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    samples = load_golden_dataset("data/golden_dataset.json")
+    samples = load_golden_dataset()
     return {"name": "Golden Dataset", "size": len(samples)}

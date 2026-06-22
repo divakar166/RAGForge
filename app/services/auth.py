@@ -12,6 +12,7 @@ from app.core.security import (
     verify_password,
 )
 from app.schemas.auth import RegisterRequest
+from app.services.orgs import seed_default_roles
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,8 @@ async def register_user(supabase: AsyncClient, req: RegisterRequest) -> tuple[di
         .execute()
     )
     org = org_resp.data[0]
+
+    await seed_default_roles(supabase, org["id"])
 
     await supabase.table("organization_members").insert({
         "organization_id": org["id"],
@@ -155,6 +158,7 @@ async def login(supabase: AsyncClient, username: str, password: str) -> dict | N
         "access_token": create_access_token(user["id"], extra_claims=extra_claims),
         "refresh_token": create_refresh_token(user["id"]),
         "token_type": "bearer",
+        "user_id": user["id"],
     }
 
 

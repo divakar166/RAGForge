@@ -43,7 +43,6 @@ const roleBadge = (role: string) => {
   const variants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
     owner: "default",
     admin: "secondary",
-    member: "outline",
   };
   return <Badge variant={variants[role] ?? "outline"}>{role}</Badge>;
 };
@@ -53,9 +52,14 @@ export default function AdminMembersPage() {
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [newRole, setNewRole] = useState("");
 
-  const { data: members, isLoading } = useQuery({
+  const { data: members, isLoading: membersLoading } = useQuery({
     queryKey: ["members"],
     queryFn: () => api.listMembers(),
+  });
+
+  const { data: roles } = useQuery({
+    queryKey: ["org-roles"],
+    queryFn: () => api.listOrgRoles(),
   });
 
   const updateMutation = useMutation({
@@ -89,7 +93,7 @@ export default function AdminMembersPage() {
           <CardTitle>Members</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {membersLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
@@ -145,8 +149,11 @@ export default function AdminMembersPage() {
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="admin">Admin</SelectItem>
-                                    <SelectItem value="member">Member</SelectItem>
+                                    {roles?.map((r) => (
+                                      <SelectItem key={r.id} value={r.name}>
+                                        {r.name}
+                                      </SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               </div>

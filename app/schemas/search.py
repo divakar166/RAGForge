@@ -51,7 +51,7 @@ class ConversationResponse(BaseModel):
     id: str
     query: str
     answer: str
-    citations: dict | None = None
+    citations: list | dict | None = None
     feedback_score: int | None = None
     created_at: datetime
 
@@ -60,6 +60,12 @@ class ConversationMessage(BaseModel):
     id: str
     query: str
     answer: str
-    citations: dict | None = None
+    citations: list | dict | None = None
     feedback_score: int | None = None
     created_at: datetime
+
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    title: str
+    messages: list[ConversationMessage]

@@ -4,6 +4,7 @@ Provides dataset generation, metric computation, and CI gate integration.
 Metrics: faithfulness, answer relevancy, context precision, context recall.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -16,7 +17,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Target thresholds for CI gate
 DEFAULT_THRESHOLDS = {
     "faithfulness": 0.80,
     "answer_relevancy": 0.75,
@@ -28,8 +28,8 @@ DEFAULT_THRESHOLDS = {
 @dataclass
 class EvalSample:
     question: str
-    answer: str
-    contexts: list[str]
+    answer: str = ""
+    contexts: list[str] = field(default_factory=list)
     ground_truth: str = ""
     metadata: dict = field(default_factory=dict)
 
@@ -49,20 +49,15 @@ class EvaluationReport:
     thresholds: dict[str, float]
 
 
-def load_golden_dataset(path: str) -> list[EvalSample]:
-    """Load a golden test dataset from a JSON file.
+def _dataset_path(org_id: str | None = None) -> str:
+    if org_id:
+        return f"data/golden_dataset_{org_id}.json"
+    return "data/golden_dataset.json"
 
-    Format:
-    [
-        {
-            "question": "...",
-            "answer": "...",
-            "contexts": ["...", "..."],
-            "ground_truth": "...",
-            "metadata": {}
-        }
-    ]
-    """
+
+def load_golden_dataset(org_id: str | None = None, path: str | None = None) -> list[EvalSample]:
+    if path is None:
+        path = _dataset_path(org_id)
     if not os.path.exists(path):
         logger.warning("Golden dataset not found at %s", path)
         return []
@@ -85,8 +80,8 @@ def load_golden_dataset(path: str) -> list[EvalSample]:
     return samples
 
 
-def save_golden_dataset(samples: list[EvalSample], path: str) -> None:
-    """Save evaluation samples as a golden dataset JSON file."""
+def save_golden_dataset(samples: list[EvalSample], org_id: str | None = None) -> str:
+    path = _dataset_path(org_id)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     data = [
         {
@@ -101,6 +96,45 @@ def save_golden_dataset(samples: list[EvalSample], path: str) -> None:
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     logger.info("Saved %d evaluation samples to %s", len(samples), path)
+    return path
+
+
+async def run_pipeline_for_samples(
+    samples: list[EvalSample],
+    org_id: str,
+    user_id: str = "eval-bot",
+    top_k: int = 5,
+) -> list[EvalSample]:
+    """Run the real RAG pipeline on each sample to produce answers and contexts."""
+    from app.rag.generation import generate_answer
+    from app.rag.retrieval import RetrievalPipeline
+
+    pipeline = RetrievalPipeline()
+
+    completed = []
+    for idx, sample in enumerate(samples):
+        logger.info("Evaluating sample %d/%d: %s", idx + 1, len(samples), sample.question[:60])
+        results = await pipeline.search(
+            query=sample.question,
+            user_id=user_id,
+            org_role="owner",
+            top_k=top_k,
+        )
+        contexts = [r.content for r in results]
+
+        answer_dict = await generate_answer(sample.question, results)
+        answer = answer_dict.get("answer", "")
+
+        completed.append(
+            EvalSample(
+                question=sample.question,
+                answer=answer,
+                contexts=contexts,
+                ground_truth=sample.ground_truth,
+                metadata=sample.metadata,
+            )
+        )
+    return completed
 
 
 async def compute_ragas_metrics(
@@ -127,7 +161,6 @@ async def compute_ragas_metrics(
 
     eval_llm = _build_ragas_llm(llm_config)
 
-    # Build HuggingFace dataset from samples
     data = {
         "question": [s.question for s in samples],
         "answer": [s.answer for s in samples],
@@ -136,15 +169,14 @@ async def compute_ragas_metrics(
     }
     dataset = Dataset.from_dict(data)
 
-    # Run evaluation
     metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
-    result = evaluate(
-        dataset=dataset,
-        metrics=metrics,
-        llm=eval_llm,
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: evaluate(dataset=dataset, metrics=metrics, llm=eval_llm),
     )
 
-    # Build per-sample results
     df = result.to_pandas()
     per_sample: list[EvalResult] = []
     aggregate: dict[str, float] = {}

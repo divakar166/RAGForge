@@ -6,6 +6,7 @@ from supabase import AsyncClient
 from app.core.deps import OrganizationContext, get_org_context
 from app.db.supabase import get_supabase
 from app.schemas.conversation import ConversationCreate, ConversationListItem, ConversationResponse, ConversationUpdate
+from app.schemas.search import ConversationDetailResponse, ConversationMessage
 from app.services.audit import log_action
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversations", tags=["orgs-conversations"])
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=ConversationResponse)
 async def create_conversation(
     req: ConversationCreate,
     ctx: OrganizationContext = Depends(get_org_context),
@@ -40,7 +41,7 @@ async def create_conversation(
     )
 
 
-@router.get("")
+@router.get("", response_model=list[ConversationListItem])
 async def list_conversations(
     ctx: OrganizationContext = Depends(get_org_context),
     supabase: AsyncClient = Depends(get_supabase),
@@ -71,7 +72,7 @@ async def list_conversations(
     return items
 
 
-@router.get("/{conversation_id}")
+@router.get("/{conversation_id}", response_model=ConversationDetailResponse)
 async def get_conversation(
     conversation_id: str,
     ctx: OrganizationContext = Depends(get_org_context),
@@ -94,16 +95,14 @@ async def get_conversation(
         supabase.table("conversations")
         .select("*")
         .eq("thread_id", conversation_id)
-        .order("created_at", asc=True)
+        .order("created_at", desc=False)
         .execute()
     )
 
-    from app.schemas.search import ConversationMessage
-
-    return {
-        "id": thread["id"],
-        "title": thread["title"],
-        "messages": [
+    return ConversationDetailResponse(
+        id=thread["id"],
+        title=thread["title"],
+        messages=[
             ConversationMessage(
                 id=m["id"],
                 query=m["query"],
@@ -114,7 +113,7 @@ async def get_conversation(
             )
             for m in (messages_resp.data or [])
         ],
-    }
+    )
 
 
 @router.patch("/{conversation_id}")

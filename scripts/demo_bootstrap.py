@@ -669,15 +669,9 @@ async def upload_document(
 
 
 async def run_migrations():
-    """Run Alembic migrations to head."""
-    logger.info("Running Alembic migrations...")
-    from alembic.config import Config as AlembicConfig
-
-    from alembic import command
-
-    alembic_cfg = AlembicConfig("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
-    logger.info("Migrations complete.")
+    """Run migrations via Supabase CLI."""
+    logger.info("Run: make db-push  (Supabase CLI migrations in supabase/migrations/)")
+    logger.info("Migrations must be applied via Supabase CLI before running this script.")
 
 
 async def seed_roles_and_permissions(db):

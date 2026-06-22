@@ -2,11 +2,12 @@
 """CI evaluation gate — runs RAGAS on the golden dataset and fails if below thresholds.
 
 Usage:
-    python scripts/ci_eval.py                        # uses default golden dataset
+    python scripts/ci_eval.py [--org-id ORG_ID]
     python scripts/ci_eval.py --dataset path/to/data.json
     python scripts/ci_eval.py --thresholds '{"faithfulness": 0.85}'
 """
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -18,9 +19,14 @@ logger = logging.getLogger(__name__)
 async def main():
     parser = argparse.ArgumentParser(description="RAGAS CI evaluation gate")
     parser.add_argument(
+        "--org-id",
+        default=None,
+        help="Organization ID to scope dataset (default: global)",
+    )
+    parser.add_argument(
         "--dataset",
-        default="data/golden_dataset.json",
-        help="Path to golden dataset JSON",
+        default=None,
+        help="Path to golden dataset JSON (overrides org-based path)",
     )
     parser.add_argument(
         "--thresholds",
@@ -39,12 +45,26 @@ async def main():
         DEFAULT_THRESHOLDS,
         compute_ragas_metrics,
         load_golden_dataset,
+        run_pipeline_for_samples,
+        save_golden_dataset,
     )
 
-    samples = load_golden_dataset(args.dataset)
+    if args.dataset:
+        samples = load_golden_dataset(path=args.dataset)
+    else:
+        samples = load_golden_dataset(org_id=args.org_id)
+
     if not samples:
-        logger.error("No evaluation samples found in %s", args.dataset)
+        logger.error("No evaluation samples found")
         sys.exit(1)
+
+    org_id_for_run = args.org_id or "global"
+    logger.info("Running RAG pipeline on %d samples (org=%s)", len(samples), org_id_for_run)
+    samples = await run_pipeline_for_samples(samples, org_id=org_id_for_run)
+    if args.org_id:
+        save_golden_dataset(samples, org_id=args.org_id)
+    else:
+        save_golden_dataset(samples)
 
     thresholds = DEFAULT_THRESHOLDS.copy()
     if args.thresholds:
@@ -53,7 +73,6 @@ async def main():
     report = await compute_ragas_metrics(samples)
     report.thresholds = thresholds
 
-    # Recompute pass/fail with custom thresholds
     report.passed = all(
         report.aggregate.get(k, 0.0) >= v for k, v in thresholds.items()
     )
@@ -62,7 +81,6 @@ async def main():
             r.scores.get(k, 0.0) >= v for k, v in thresholds.items()
         )
 
-    # Print summary
     print("\n" + "=" * 60)
     print("RAGAS EVALUATION REPORT")
     print("=" * 60)
@@ -94,5 +112,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

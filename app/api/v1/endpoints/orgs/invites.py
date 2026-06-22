@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from supabase import AsyncClient
 
 from app.core.deps import OrganizationContext, require_org_role
@@ -21,6 +21,9 @@ async def invite_member(
     supabase: AsyncClient = Depends(get_supabase),
     request: Request = None,
 ):
+    valid = await orgs_service.validate_role_name(supabase, ctx.organization["id"], req.role)
+    if not valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Role '{req.role}' does not exist in this organization")
     invitation = await orgs_service.invite_member(
         supabase, ctx.organization["id"], req.email, req.role, ctx.member["user_id"],
     )

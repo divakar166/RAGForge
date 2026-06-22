@@ -69,5 +69,4 @@ class Settings(BaseSettings):
     # RAGAS
     RAGAS_ENABLED: bool = False
 
-
 settings = Settings()

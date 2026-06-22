@@ -55,9 +55,7 @@ class LLMClient:
         lf = get_langfuse()
         if lf is not None:
             try:
-                from langfuse.decorators import langfuse_context
-
-                langfuse_context.update_current_observation(
+                lf.update_current_generation(
                     input=messages,
                     model=self.model,
                     model_parameters={"max_tokens": self.max_tokens, "temperature": self.temperature},
@@ -78,7 +76,7 @@ class LLMClient:
             if lf is not None:
                 try:
                     usage = data.get("usage", {})
-                    langfuse_context.update_current_observation(
+                    lf.update_current_generation(
                         output=data.get("choices", [{}])[0].get("message", {}).get("content", ""),
                         usage={
                             "input": usage.get("prompt_tokens", 0),

@@ -26,6 +26,11 @@ async def update_member(
     ctx: OrganizationContext = Depends(require_org_role("owner", "admin")),
     supabase: AsyncClient = Depends(get_supabase),
 ):
+    if req.role:
+        valid = await orgs_service.validate_role_name(supabase, ctx.organization["id"], req.role)
+        if not valid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Role '{req.role}' does not exist in this organization")
+
     updated = await orgs_service.update_member_role(
         supabase, ctx.organization["id"], user_id,
         role=req.role, is_active=req.is_active,

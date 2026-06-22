@@ -23,6 +23,7 @@ export interface Document {
   file_type: string;
   file_size: number;
   status: string;
+  classification: string;
   allowed_roles: string[];
   uploaded_by_id: string;
   organization_id: string;
@@ -194,3 +195,31 @@ export interface Invitation {
   expires_at: string;
   accepted_at: string | null;
 }
+
+export interface OrgRole {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  permissions: string[];
+  is_system: boolean;
+  member_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export const PERMISSION_OPTIONS = [
+  "documents:create",
+  "documents:read",
+  "documents:update",
+  "documents:delete",
+  "documents:download",
+  "search:query",
+  "collections:manage",
+  "members:manage",
+  "invites:manage",
+  "audit:view",
+  "evaluate:run",
+  "roles:manage",
+  "settings:manage",
+] as const;

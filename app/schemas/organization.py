@@ -42,7 +42,7 @@ class MemberUpdate(BaseModel):
 
 class InviteRequest(BaseModel):
     email: str = Field(min_length=1)
-    role: str = Field(default="member", pattern=r"^(admin|member|viewer)$")
+    role: str = Field(default="member")
 
 
 class InviteAcceptRequest(BaseModel):

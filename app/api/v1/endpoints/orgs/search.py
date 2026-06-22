@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends
+import logging
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import StreamingResponse
 from supabase import AsyncClient
 
 from app.core.deps import OrganizationContext, get_org_context
 from app.db.supabase import get_supabase
 from app.rag.embeddings import OpenAIEmbeddingProvider
-from app.rag.generation import generate_answer
+from app.rag.generation import generate_answer, generate_answer_stream
 from app.rag.retrieval import RetrievalPipeline
 from app.schemas.search import (
     ConversationResponse,
@@ -16,6 +21,8 @@ from app.schemas.search import (
     SearchResultItem,
 )
 from app.services.audit import log_action
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/search", tags=["orgs-search"])
 
@@ -29,7 +36,7 @@ async def _get_retrieval_pipeline(ctx: OrganizationContext) -> RetrievalPipeline
     return pipeline
 
 
-@router.post("/query")
+@router.post("/query", response_model=SearchResponse)
 async def search(
     req: SearchRequest,
     ctx: OrganizationContext = Depends(get_org_context),
@@ -65,24 +72,30 @@ async def search(
     return SearchResponse(query=req.query, results=items, total=len(items))
 
 
-@router.post("/ask")
+@router.post("/ask", response_model=RAGResponse)
 async def ask(
     req: RAGRequest,
     ctx: OrganizationContext = Depends(get_org_context),
     supabase: AsyncClient = Depends(get_supabase),
 ):
-    from app.monitoring.tracing import get_langfuse
+    request_id = str(uuid.uuid4())[:8]
+    logger.info("[%s] /ask query='%s' top_k=%d conversation_id=%s",
+                request_id, req.query, req.top_k, req.conversation_id)
+
+    from app.monitoring.tracing import get_current_trace_id, get_langfuse
 
     pipeline = await _get_retrieval_pipeline(ctx)
+    logger.info("[%s] RetrievalPipeline created", request_id)
 
     # Build context from conversation history if thread exists
     history_context = ""
     if req.conversation_id:
+        logger.info("[%s] Loading conversation history for thread %s", request_id, req.conversation_id)
         prev_msgs = await (
             supabase.table("conversations")
             .select("*")
             .eq("thread_id", req.conversation_id)
-            .order("created_at", asc=True)
+            .order("created_at", desc=False)
             .limit(20)
             .execute()
         )
@@ -91,11 +104,32 @@ async def ask(
             for m in prev_msgs.data:
                 parts.append(f"User: {m['query']}\nAssistant: {m['answer']}")
             history_context = "Previous conversation:\n" + "\n\n".join(parts) + "\n\n"
+            logger.info("[%s] Loaded %d history messages", request_id, len(prev_msgs.data))
+
+    logger.info("[%s] Running hybrid search...", request_id)
+    results = await pipeline.search(
+        query=req.query,
+        user_id=ctx.member["user_id"],
+        org_role=ctx.member["role"],
+        top_k=req.top_k,
+    )
+    logger.info("[%s] Search returned %d results", request_id, len(results))
+
+    if not results:
+        return RAGResponse(
+            query=req.query, answer="No relevant documents found.",
+            citations=[], model="none",
+        )
+
+    if req.stream:
+        logger.info("[%s] Streaming mode — returning token stream", request_id)
+        stream_gen = generate_answer_stream(req.query, results, history_context=history_context)
+        return StreamingResponse(stream_gen, media_type="text/event-stream")
 
     lf = get_langfuse()
     if lf is not None:
+        logger.info("[%s] Langfuse tracing enabled", request_id)
         from langfuse import propagate_attributes
-        from langfuse.decorators import langfuse_context
 
         with lf.start_as_current_observation(
             as_type="span", name="ask", input={"query": req.query},
@@ -105,36 +139,19 @@ async def ask(
                 session_id=ctx.member["user_id"],
                 tags=["rag:ask"],
             ):
-                results = await pipeline.search(
-                    query=req.query,
-                    user_id=ctx.member["user_id"],
-                    org_role=ctx.member["role"],
-                    top_k=req.top_k,
-                )
-                if not results:
-                    root_span.update(output={"answer": "No relevant documents found."})
-                    return RAGResponse(
-                        query=req.query, answer="No relevant documents found.",
-                        citations=[], model="none",
-                    )
-
+                logger.info("[%s] Generating answer with LLM...", request_id)
                 answer = await generate_answer(req.query, results, history_context=history_context)
+                logger.info("[%s] Answer generated successfully", request_id)
                 root_span.update(output=answer)
-                trace_id = langfuse_context.get_current_trace_id()
+                trace_id = get_current_trace_id()
+                answer["trace_id"] = trace_id
     else:
-        results = await pipeline.search(
-            query=req.query,
-            user_id=ctx.member["user_id"],
-            org_role=ctx.member["role"],
-            top_k=req.top_k,
-        )
-        if not results:
-            return RAGResponse(
-                query=req.query, answer="No relevant documents found.",
-                citations=[], model="none",
-            )
+        logger.info("[%s] Langfuse disabled — running without tracing", request_id)
+        logger.info("[%s] Generating answer with LLM...", request_id)
         answer = await generate_answer(req.query, results, history_context=history_context)
-        trace_id = answer.pop("trace_id", None)
+        logger.info("[%s] Answer generated successfully", request_id)
+
+    trace_id = answer.pop("trace_id", None)
 
     await log_action(
         supabase, ctx.member["user_id"], "search:ask",
@@ -152,27 +169,18 @@ async def ask(
     }
     if req.conversation_id:
         conv_data["thread_id"] = req.conversation_id
-        await supabase.table("conversation_threads").update({"updated_at": "now()"}).eq("id", req.conversation_id).execute()
+        await supabase.table("conversation_threads").update({"updated_at": datetime.now(timezone.utc).isoformat()}).eq("id", req.conversation_id).execute()
 
     await supabase.table("conversations").insert(conv_data).execute()
+    logger.info("[%s] Conversation saved to DB", request_id)
 
     resp = RAGResponse(**answer)
     resp.trace_id = trace_id
-    resp.citations = [
-        SearchResultItem(
-            score=c.get("score", 0),
-            text=c.get("content", ""),
-            content=c.get("content", ""),
-            document_id=c.get("document_id", ""),
-            document_filename=c.get("doc_title", ""),
-            doc_title=c.get("doc_title", ""),
-        )
-        for c in resp.citations
-    ]
+    logger.info("[%s] RAGResponse built — returning to client", request_id)
     return resp
 
 
-@router.get("/history")
+@router.get("/history", response_model=list[ConversationResponse])
 async def search_history(
     ctx: OrganizationContext = Depends(get_org_context),
     supabase: AsyncClient = Depends(get_supabase),
@@ -220,6 +228,8 @@ async def submit_feedback(
         value=score_val,
         data_type="BOOLEAN",
     )
+
+    await supabase.table("conversations").update({"feedback_score": score_val}).eq("trace_id", req.trace_id).execute()
 
     await log_action(
         supabase, ctx.member["user_id"], "search:feedback",

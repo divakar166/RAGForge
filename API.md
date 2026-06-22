@@ -4,11 +4,17 @@ Base URL: `http://localhost:8000`
 API Prefix: `/api/v1`
 
 - [Auth](#auth)
-- [Users](#users)
-- [Roles & Permissions](#roles--permissions)
-- [Documents](#documents)
-- [Search & RAG](#search--rag)
-- [Evaluation](#evaluation)
+- [Invites](#invites)
+- [Users & Roles](#users--roles)
+- [Org-scoped Endpoints](#org-scoped-endpoints)
+  - [Documents](#documents)
+  - [Collections](#collections)
+  - [Search & RAG](#search--rag)
+  - [Conversations](#conversations)
+  - [Members](#members)
+  - [Invitations](#invitations)
+  - [Audit Log](#audit-log)
+  - [Evaluation](#evaluation)
 - [Health](#health)
 
 ---
@@ -17,35 +23,34 @@ API Prefix: `/api/v1`
 
 ### `POST /api/v1/auth/register`
 
-Create a new user account. Auto-assigns the `viewer` role. Returns tokens on success.
+Create a new user account and organization. User becomes the org owner.
 
 **Request Body:**
 ```json
 {
   "email": "user@example.com",
   "username": "johndoe",
-  "password": "securePassword123"
+  "password": "securePassword123",
+  "org_name": "My Org",
+  "org_slug": "my-org"
 }
 ```
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `email` | string | valid email | |
-| `username` (aliased as `full_name`) | string | 3–64 chars | sent as `username` in JSON body |
-| `password` | string | 8–128 chars | |
 
 **Response (201):**
 ```json
 {
-  "id": "uuid-string",
+  "id": "uuid",
   "email": "user@example.com",
+  "username": "johndoe",
+  "org_id": "uuid",
+  "org_name": "My Org",
   "access_token": "eyJ...",
   "refresh_token": "eyJ...",
   "token_type": "bearer"
 }
 ```
 
-**Errors:** `409 Conflict` — email/username already taken
+**Errors:** `409` — email/username/org slug already taken
 
 ---
 
@@ -61,11 +66,7 @@ Authenticate and receive JWT tokens.
 }
 ```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `username` | string | username OR email — supply either |
-| `email` | string | alternate field, not required if `username` provided |
-| `password` | string | |
+`username` accepts username or email.
 
 **Response (200):**
 ```json
@@ -76,7 +77,7 @@ Authenticate and receive JWT tokens.
 }
 ```
 
-**Errors:** `401 Unauthorized` — invalid credentials
+**Errors:** `401` — invalid credentials
 
 ---
 
@@ -100,30 +101,24 @@ Exchange a refresh token for a new token pair.
 }
 ```
 
-**Errors:** `401 Unauthorized` — invalid/expired refresh token
-
 ---
 
 ### `GET /api/v1/auth/me`
 
-Get the currently authenticated user's profile with roles and permissions.
+Get the currently authenticated user's profile with org memberships.
 
 **Headers:** `Authorization: Bearer <access_token>`
 
 **Response (200):**
 ```json
 {
-  "id": "uuid-string",
+  "id": "uuid",
   "email": "user@example.com",
-  "full_name": "johndoe",
+  "username": "johndoe",
   "is_active": true,
   "is_superuser": false,
-  "roles": [
-    {
-      "id": "uuid-string",
-      "name": "viewer",
-      "permissions": ["document:read", "search:query"]
-    }
+  "organizations": [
+    {"id": "uuid", "name": "My Org", "slug": "my-org", "role": "owner"}
   ],
   "created_at": "2025-01-01T00:00:00",
   "updated_at": "2025-01-01T00:00:00"
@@ -132,29 +127,55 @@ Get the currently authenticated user's profile with roles and permissions.
 
 ---
 
-## Users
+## Invites
 
-*All endpoints require `admin:full` / `users:manage` (superuser).*
+### `GET /api/v1/invites/verify`
+
+Verify an invitation token (no auth required).
+
+**Query Params:** `token` (string)
+
+**Response (200):**
+```json
+{
+  "valid": true,
+  "email": "invited@example.com",
+  "role": "member",
+  "org_name": "My Org"
+}
+```
+
+---
+
+### `POST /api/v1/invites/accept`
+
+Accept an invitation. User must be authenticated (logged in).
+
+**Request Body:**
+```json
+{
+  "token": "invite-token-string"
+}
+```
+
+**Response (200):**
+```json
+{
+  "detail": "Invitation accepted"
+}
+```
+
+---
+
+## Users & Roles
+
+*All endpoints require `token` (owner/admin).*
 
 ### `GET /api/v1/users`
 
 List all users.
 
-**Response (200):**
-```json
-[
-  {
-    "id": "uuid-string",
-    "email": "user@example.com",
-    "full_name": "johndoe",
-    "is_active": true,
-    "is_superuser": false,
-    "roles": [{"id": "...", "name": "viewer", "permissions": ["..."]}],
-    "created_at": "...",
-    "updated_at": "..."
-  }
-]
-```
+**Response (200):** Array of user objects.
 
 ---
 
@@ -162,66 +183,29 @@ List all users.
 
 Get a single user by UUID.
 
-**Path Params:** `user_id` (UUID string)
-
-**Errors:** `400` — invalid UUID, `404` — not found
-
 ---
 
 ### `PATCH /api/v1/users/{user_id}`
 
 Update user's active/superuser flags.
 
-**Request Body:**
-```json
-{
-  "is_active": true,
-  "is_superuser": false
-}
-```
-
-Both fields optional.
-
-**Response (200):** `{"detail": "User updated"}`
-
 ---
-
-### `POST /api/v1/users/{user_id}/roles`
-
-Replace all role assignments for a user.
-
-**Request Body:**
-```json
-{
-  "role_ids": ["uuid-of-role-1"]
-}
-```
-
-**Response (200):** Full `UserResponse` object with updated roles.
-
-**Errors:** `404` — user not found
-
----
-
-## Roles & Permissions
-
-*All endpoints require admin.*
 
 ### `GET /api/v1/roles`
 
-List all roles with their permission codenames.
+List all roles.
 
 **Response (200):**
 ```json
 [
   {
-    "id": "uuid-string",
+    "id": "uuid",
     "name": "admin",
-    "description": "Full system access",
+    "description": "Full access",
     "is_system_role": true,
     "permissions": ["document:create", "document:read", "..."],
-    "created_at": "2025-01-01T00:00:00",
-    "updated_at": "2025-01-01T00:00:00"
+    "created_at": "...",
+    "updated_at": "..."
   }
 ]
 ```
@@ -232,36 +216,11 @@ List all roles with their permission codenames.
 
 Create a new role.
 
-**Request Body:**
-```json
-{
-  "name": "custom-role",
-  "description": "My custom role",
-  "permission_ids": ["uuid-of-permission-1"]
-}
-```
-
-**Response (201):** Full `RoleResponse` object.
-
 ---
 
 ### `GET /api/v1/roles/permissions`
 
-List all available permissions.
-
-**Response (200):**
-```json
-[
-  {
-    "id": "uuid-string",
-    "codename": "document:create",
-    "name": "Create Documents",
-    "description": null,
-    "resource_type": "document",
-    "action": "create"
-  }
-]
-```
+List all available permission codenames.
 
 ---
 
@@ -269,68 +228,42 @@ List all available permissions.
 
 Delete a role (cannot delete system roles).
 
-**Response (200):** `{"detail": "Role deleted"}`
+---
 
-**Errors:** `404` — not found or is system role
+## Org-scoped Endpoints
+
+All org-scoped endpoints are prefixed with `/api/v1/orgs/{org_id}/`. All require `Authorization: Bearer <access_token>` header.
 
 ---
 
-## Documents
+### Documents
 
-### `POST /api/v1/documents/upload`
+#### `GET /orgs/{org_id}/documents`
 
-Upload a document (file). Triggers async `process_document` Celery task.
+List documents with pagination. Respects RBAC (`allowed_roles`).
 
-**Auth:** Requires `document:create` or `*:*` permission.
-
-**Request:** `multipart/form-data`
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `file` | file | Allowed: `pdf`, `docx`, `txt`, `md`, `html` (configurable via `ALLOWED_EXTENSIONS`) |
-
-**Response (202):**
-```json
-{
-  "id": "uuid-string",
-  "title": "filename.pdf",
-  "filename": "filename.pdf",
-  "file_type": "pdf",
-  "file_size": 12345,
-  "status": "uploaded",
-  "is_public": false,
-  "owner_id": "uuid",
-  "allowed_role_ids": [],
-  "allowed_user_ids": [],
-  "chunk_count": 0,
-  "created_at": "...",
-  "updated_at": "..."
-}
-```
-
-**Errors:** `400` — disallowed file type, `413` — file too large, `403` — permission denied
-
----
-
-### `GET /api/v1/documents`
-
-List documents with pagination.
-
-**Auth:** Authenticated user.
-
-**Query Params:**
-
-| Param | Type | Default | Notes |
-|-------|------|---------|-------|
-| `page` | int | 1 | |
-| `per_page` | int | 20 | |
-
-**RBAC:** Superusers see all documents. Regular users see only their own + public docs.
+**Query Params:** `page` (1), `per_page` (20)
 
 **Response (200):**
 ```json
 {
-  "items": [/* DocumentResponse */],
+  "items": [
+    {
+      "id": "uuid",
+      "title": "doc.pdf",
+      "filename": "doc.pdf",
+      "file_type": "pdf",
+      "file_size": 12345,
+      "status": "indexed",
+      "allowed_roles": ["member"],
+      "uploaded_by_id": "uuid",
+      "organization_id": "uuid",
+      "collection_id": null,
+      "chunk_count": 12,
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ],
   "total": 5,
   "page": 1,
   "per_page": 20
@@ -339,54 +272,119 @@ List documents with pagination.
 
 ---
 
-### `GET /api/v1/documents/{document_id}`
+#### `POST /orgs/{org_id}/documents/upload`
 
-Get a single document.
+Upload a document. Triggers Celery `process_document` task.
 
-**Auth:** Superusers can access any. Users can access their own or public documents.
+**Request:** `multipart/form-data` with `file` field.
+Allowed: `pdf`, `docx`, `txt`, `md`, `html`.
 
-**Errors:** `400` — invalid UUID, `404` — not found, `403` — access denied
-
----
-
-### `DELETE /api/v1/documents/{document_id}`
-
-Delete a document and its file.
-
-**Auth:** Superusers can delete any. Users can only delete their own.
-
-**Response (200):** `{"detail": "Document deleted"}`
-
-**Errors:** `400`/`404`/`403`
+**Response (202):** Document object with `status: "uploaded"`.
 
 ---
 
-### `POST /api/v1/documents/{document_id}/access`
+#### `GET /orgs/{org_id}/documents/{document_id}`
 
-Update access control rules for a document.
+Get a single document's metadata.
 
-**Auth:** Superusers or document owner.
+---
+
+#### `PATCH /orgs/{org_id}/documents/{document_id}`
+
+Update document fields (e.g., `collection_id`, `title`).
 
 **Request Body:**
 ```json
 {
-  "is_public": true,
-  "allowed_role_ids": [],
-  "allowed_user_ids": []
+  "collection_id": "uuid-or-null",
+  "title": "new-title.pdf"
 }
 ```
 
-**Response (200):** `{"detail": "Access rules updated"}`
+---
+
+#### `DELETE /orgs/{org_id}/documents/{document_id}`
+
+Delete a document and its file.
 
 ---
 
-## Search & RAG
+#### `POST /orgs/{org_id}/documents/{document_id}/access`
 
-### `POST /api/v1/search/query`
+Update document access control.
 
-Perform a hybrid dense+sparse vector search.
+**Auth:** `owner` or `admin`.
 
-**Auth:** Requires `search:query` or `*:*` permission.
+**Request Body:**
+```json
+{
+  "allowed_roles": ["admin", "editor"]
+}
+```
+
+---
+
+#### `GET /orgs/{org_id}/documents/{document_id}/download`
+
+Download the original file with proper Content-Type.
+
+**Response:** Binary file stream.
+
+---
+
+### Collections
+
+#### `GET /orgs/{org_id}/collections`
+
+List all collections with document counts.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "uuid",
+    "organization_id": "uuid",
+    "name": "Resumes",
+    "description": "Candidate resumes",
+    "is_public": false,
+    "document_count": 3,
+    "created_at": "...",
+    "updated_at": "..."
+  }
+]
+```
+
+---
+
+#### `POST /orgs/{org_id}/collections`
+
+Create a collection.
+
+---
+
+#### `GET /orgs/{org_id}/collections/{collection_id}`
+
+Get collection detail with its documents.
+
+---
+
+#### `PATCH /orgs/{org_id}/collections/{collection_id}`
+
+Update collection.
+
+---
+
+#### `DELETE /orgs/{org_id}/collections/{collection_id}`
+
+Delete a collection (documents remain, `collection_id` set to null).
+
+---
+
+### Search & RAG
+
+#### `POST /orgs/{org_id}/search/query`
+
+Hybrid dense+sparse vector search with RBAC filter.
 
 **Request Body:**
 ```json
@@ -395,11 +393,6 @@ Perform a hybrid dense+sparse vector search.
   "top_k": 5
 }
 ```
-
-| Field | Type | Default | Constraints |
-|-------|------|---------|-------------|
-| `query` | string | — | 1–2000 chars |
-| `top_k` | int | 5 | 1–50 |
 
 **Response (200):**
 ```json
@@ -414,7 +407,6 @@ Perform a hybrid dense+sparse vector search.
       "document_id": "uuid",
       "document_filename": "doc.pdf",
       "doc_title": "doc.pdf",
-      "metadata": {},
       "chunk_index": 0,
       "section_path": null
     }
@@ -425,74 +417,42 @@ Perform a hybrid dense+sparse vector search.
 
 ---
 
-### `POST /api/v1/search/ask`
+#### `POST /orgs/{org_id}/search/ask`
 
-Full RAG pipeline: search + LLM answer with citations.
-
-**Auth:** Requires `search:query` or `*:*` permission.
+Full RAG pipeline: hybrid search + LLM answer generation with citations.
 
 **Request Body:**
 ```json
 {
   "query": "What is RAG?",
   "top_k": 5,
-  "stream": false
+  "conversation_id": null
 }
 ```
 
-| Field | Type | Default | Constraints |
-|-------|------|---------|-------------|
-| `query` | string | — | 1–2000 chars |
-| `top_k` | int | 5 | 1–20 |
-| `stream` | bool | false | (placeholder) |
+When `conversation_id` is provided, prior Q&A from that conversation is included as context for follow-ups.
 
 **Response (200):**
 ```json
 {
-  "query": "What is RAG?",
+  "query": "...",
   "answer": "RAG stands for Retrieval-Augmented Generation...",
-  "citations": [/* SearchResultItem entries */],
-  "model": "gpt-4o-mini",
+  "citations": [/* SearchResultItem */],
   "trace_id": "langfuse-trace-id"
 }
 ```
 
-If no relevant documents found:
-```json
-{
-  "query": "...",
-  "answer": "No relevant documents found.",
-  "citations": [],
-  "model": "none",
-  "trace_id": null
-}
-```
+---
+
+#### `GET /orgs/{org_id}/search/history`
+
+Get search/ask history for the user, scoped to org.
 
 ---
 
-### `GET /api/v1/search/history`
+#### `POST /orgs/{org_id}/search/feedback`
 
-Get the last 50 search/ask queries for the authenticated user.
-
-**Response (200):**
-```json
-[
-  {
-    "id": "uuid",
-    "type": "ask",
-    "query": "What is RAG?",
-    "created_at": "2025-01-01T00:00:00+00:00"
-  }
-]
-```
-
-`type` values: `"ask"` or `"search"`
-
----
-
-### `POST /api/v1/search/feedback`
-
-Submit user satisfaction feedback for a RAG response.
+Submit feedback on a RAG response.
 
 **Request Body:**
 ```json
@@ -503,23 +463,154 @@ Submit user satisfaction feedback for a RAG response.
 }
 ```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `trace_id` | string | Langfuse trace ID |
-| `score` | int or string | `0`/`1` or `"thumbs_up"`/`"thumbs_down"` |
-| `comment` | string | Optional feedback text |
+---
 
-**Response (200):** `{"status": "ok"}`
+### Conversations
+
+#### `GET /orgs/{org_id}/conversations`
+
+List conversation threads for the current user.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "uuid",
+    "title": "New Chat",
+    "message_count": 5,
+    "created_at": "..."
+  }
+]
+```
 
 ---
 
-## Evaluation
+#### `POST /orgs/{org_id}/conversations`
 
-### `POST /api/v1/evaluate/run`
+Create a new empty conversation thread.
 
-Run RAGAS evaluation on the golden dataset.
+**Response (200):** `{"id": "uuid", "title": "New Chat"}`
 
-**Auth:** Requires `evaluate:run` or `*:*` permission.
+---
+
+#### `GET /orgs/{org_id}/conversations/{thread_id}`
+
+Get a conversation thread with all its messages.
+
+---
+
+#### `DELETE /orgs/{org_id}/conversations/{thread_id}`
+
+Delete a conversation thread and all its messages.
+
+---
+
+### Members
+
+#### `GET /orgs/{org_id}/members`
+
+List all org members.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "uuid",
+    "user_id": "uuid",
+    "email": "user@example.com",
+    "username": "johndoe",
+    "role": "owner",
+    "is_active": true,
+    "created_at": "..."
+  }
+]
+```
+
+---
+
+#### `PATCH /orgs/{org_id}/members/{member_id}`
+
+Update member role or active status. Only `owner` and `admin` can manage members.
+
+**Request Body:**
+```json
+{
+  "role": "admin",
+  "is_active": true
+}
+```
+
+---
+
+#### `DELETE /orgs/{org_id}/members/{member_id}`
+
+Remove a member from the org.
+
+---
+
+### Invitations
+
+#### `GET /orgs/{org_id}/invites`
+
+List pending invitations for the org.
+
+---
+
+#### `POST /orgs/{org_id}/invites`
+
+Create a new invitation.
+
+**Request Body:**
+```json
+{
+  "email": "invited@example.com",
+  "role": "member"
+}
+```
+
+---
+
+#### `DELETE /orgs/{org_id}/invites/{invite_id}`
+
+Cancel a pending invitation.
+
+---
+
+### Audit Log
+
+#### `GET /orgs/{org_id}/audit`
+
+Get paginated audit log entries for the org.
+
+**Query Params:** `page` (1), `per_page` (20), `action` (optional filter)
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "action": "document:upload",
+      "resource_type": "document",
+      "resource_id": "uuid",
+      "details": {},
+      "actor_email": "user@example.com",
+      "created_at": "..."
+    }
+  ],
+  "total": 50,
+  "page": 1,
+  "per_page": 20
+}
+```
+
+---
+
+### Evaluation
+
+#### `POST /orgs/{org_id}/evaluate/run`
+
+Run RAGAS evaluation against the golden dataset.
 
 **Response (200):**
 ```json
@@ -531,29 +622,13 @@ Run RAGAS evaluation on the golden dataset.
 ]
 ```
 
-**Errors:** `404` — no golden dataset found
-
----
-
-### `GET /api/v1/evaluate/dataset`
-
-Get metadata about the golden evaluation dataset.
-
-**Response (200):**
-```json
-{
-  "name": "Golden Dataset",
-  "size": 10
-}
-```
-
 ---
 
 ## Health
 
 ### `GET /health`
 
-**No auth required.**
+No auth required.
 
 ```json
 {
@@ -566,55 +641,56 @@ Get metadata about the golden evaluation dataset.
 
 ## Authentication Flow
 
-1. **Register** or **Login** to get `access_token` + `refresh_token`
-2. Include `Authorization: Bearer <access_token>` in all protected requests
-3. When expired, use **Refresh** to get a new token pair
+1. **Register** — creates user + org, returns tokens
+2. **Login** — get `access_token` + `refresh_token`
+3. Include `Authorization: Bearer <access_token>` in all requests
+4. When expired, use **Refresh** to get a new token pair
+5. **Accept invite** — join an existing org via invitation token
 
 ### JWT Token Payload
 
 | Claim | Value |
 |-------|-------|
-| `sub` | User UUID (string) |
-| `exp` | Expiration timestamp |
+| `sub` | User UUID |
+| `exp` | Expiration |
 | `type` | `"access"` or `"refresh"` |
 
-- Access token lifetime: 30 minutes (configurable via `ACCESS_TOKEN_EXPIRE_MINUTES`)
-- Refresh token lifetime: 7 days (configurable via `REFRESH_TOKEN_EXPIRE_DAYS`)
+- Access: 30 minutes (`ACCESS_TOKEN_EXPIRE_MINUTES`)
+- Refresh: 7 days (`REFRESH_TOKEN_EXPIRE_DAYS`)
 
 ---
 
-## RBAC / Permission Model
+## RBAC Model
 
-| Permission Codename | Roles | Endpoints |
-|---------------------|-------|-----------|
-| `document:create` | admin, editor | `POST /documents/upload` |
-| `document:read` | admin, editor, viewer | Service-layer on document get |
-| `document:update` | admin, editor | `POST /documents/{id}/access` |
-| `document:delete` | admin, editor | `DELETE /documents/{id}` |
-| `search:query` | admin, editor, viewer | `POST /search/query`, `POST /search/ask` |
-| `users:manage` | admin | (admin-only dep) |
-| `roles:manage` | admin | (admin-only dep) |
-| `evaluate:run` | admin | `POST /evaluate/run` |
-| `admin:full` | admin | (superuser check) |
+| Role | Scope |
+|------|-------|
+| `owner` | Full org access, can delete org |
+| `admin` | Manage members, documents, settings |
+| `member` | Upload/read documents, search |
 
-Built-in roles:
-- **admin**: all 9 permissions
-- **editor**: create, read, update, delete documents + search
-- **viewer**: read documents + search (auto-assigned on registration)
+Document-level access is controlled via `allowed_roles` (Qdrant payload pre-filter):
+
+- Documents default to `["member"]` — all members can view
+- Owners/admins can restrict to `["admin"]` or specific roles
 
 ---
 
-## Environment / Configuration
-
-Key config values (see `app/core/config.py`):
+## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+asyncpg://...` | Async PostgreSQL |
-| `SECRET_KEY` | `change-me-in-production` | JWT signing key |
+| `SUPABASE_URL` | — | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | — | Service role key |
+| `SUPABASE_MODE` | `false` | Enable Supabase REST client |
+| `SECRET_KEY` | `change-me` | JWT signing key |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant gRPC endpoint |
+| `QDRANT_API_KEY` | — | Qdrant Cloud API key |
+| `QDRANT_COLLECTION` | `documents` | Collection name |
+| `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible LLM |
+| `LLM_API_KEY` | — | LLM API key |
+| `LLM_MODEL` | `gpt-4o-mini` | Model name |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery broker |
 | `ALLOWED_EXTENSIONS` | `pdf,docx,txt,md,html` | Comma-separated string |
-| `MAX_FILE_SIZE` | 52428800 (50MB) | Max upload size |
-| `TEI_ENDPOINT` | `http://localhost:8080` | TEI embedding service |
-| `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API |
-| `QDRANT_HOST` | `localhost` | Vector DB host |
-| `LANGFUSE_ENABLED` | `false` | Enable Langfuse tracing |
+| `UPLOAD_DIR` | `./uploads` | File storage |
+| `LANGFUSE_ENABLED` | `false` | Opt-in tracing |

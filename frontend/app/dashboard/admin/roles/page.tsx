@@ -1,10 +1,9 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Shield, ShieldOff, Trash2 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Member } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,177 +11,238 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import type { OrgRole } from "@/lib/types";
+import { PERMISSION_OPTIONS } from "@/lib/types";
 
-export default function AdminMembersPage() {
+const PERMISSION_LABELS: Record<string, string> = {
+  "documents:create": "Create Documents",
+  "documents:read": "Read Documents",
+  "documents:update": "Update Documents",
+  "documents:delete": "Delete Documents",
+  "documents:download": "Download Documents",
+  "search:query": "Search & Ask",
+  "collections:manage": "Manage Collections",
+  "members:manage": "Manage Members",
+  "invites:manage": "Manage Invitations",
+  "audit:view": "View Audit Log",
+  "evaluate:run": "Run Evaluations",
+  "roles:manage": "Manage Roles",
+  "settings:manage": "Manage Settings",
+};
+
+function RoleForm({
+  role,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  role?: OrgRole;
+  onSave: (data: { name: string; description: string; permissions: string[] }) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState(role?.name ?? "");
+  const [description, setDescription] = useState(role?.description ?? "");
+  const [permissions, setPermissions] = useState<string[]>(role?.permissions ?? ["documents:read", "search:query"]);
+
+  const togglePermission = (perm: string) => {
+    setPermissions((p) =>
+      p.includes(perm) ? p.filter((x) => x !== perm) : [...p, perm],
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Role Name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. compliance-officer" disabled={role?.is_system} />
+      </div>
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this role can do" disabled={role?.is_system} />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-base font-medium">Permissions</Label>
+        <p className="text-xs text-muted-foreground">Choose what members with this role can do</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {PERMISSION_OPTIONS.map((perm) => (
+            <div key={perm} className="flex items-center gap-2">
+              <Checkbox
+                id={`perm-${perm}`}
+                checked={permissions.includes(perm)}
+                onCheckedChange={() => togglePermission(perm)}
+              />
+              <Label htmlFor={`perm-${perm}`} className="text-sm cursor-pointer">
+                {PERMISSION_LABELS[perm] ?? perm}
+              </Label>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button onClick={() => onSave({ name, description, permissions })} disabled={!name || saving}>
+          {saving ? "Saving..." : role ? "Update Role" : "Create Role"}
+        </Button>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+export default function AdminRolesPage() {
   const queryClient = useQueryClient();
-  const [editMember, setEditMember] = useState<Member | null>(null);
-  const [newRole, setNewRole] = useState("");
+  const [editingRole, setEditingRole] = useState<OrgRole | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  const { data: members, isLoading } = useQuery({
-    queryKey: ["members"],
-    queryFn: () => api.listMembers(),
+  const { data: roles, isLoading } = useQuery({
+    queryKey: ["org-roles"],
+    queryFn: () => api.listOrgRoles(),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; description: string; permissions: string[] }) => api.createOrgRole(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-roles"] });
+      toast.success("Role created");
+      setCreating(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      api.updateMember(userId, { role }),
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; description?: string; permissions?: string[] } }) =>
+      api.updateOrgRole(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["members"] });
-      toast.success("Member role updated");
-      setEditMember(null);
+      queryClient.invalidateQueries({ queryKey: ["org-roles"] });
+      toast.success("Role updated");
+      setEditingRole(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const removeMutation = useMutation({
-    mutationFn: (userId: string) => api.removeMember(userId),
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteOrgRole(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["members"] });
-      toast.success("Member removed");
+      queryClient.invalidateQueries({ queryKey: ["org-roles"] });
+      toast.success("Role deleted");
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const roleBadge = (role: string) => {
-    const variants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-      owner: "default",
-      admin: "secondary",
-      member: "outline",
-    };
-    return <Badge variant={variants[role] ?? "outline"}>{role}</Badge>;
-  };
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Organization Members</h1>
+        <h1 className="text-3xl font-bold">Roles</h1>
+        <Button onClick={() => setCreating(true)} disabled={creating}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Role
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : !members?.length ? (
-            <p className="text-muted-foreground py-8 text-center">No members found.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="w-24" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.username}</TableCell>
-                    <TableCell className="text-muted-foreground">{m.email}</TableCell>
-                    <TableCell>{roleBadge(m.role)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Dialog
-                          open={editMember?.id === m.id}
-                          onOpenChange={(open) => {
-                            if (!open) { setEditMember(null); setNewRole(""); }
-                          }}
-                        >
-                          <DialogTrigger
-                            render={
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => { setEditMember(m); setNewRole(m.role); }}
-                                disabled={m.role === "owner"}
-                              >
-                                <Shield className="h-4 w-4" />
-                              </Button>
-                            }
-                          />
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Change Role — {m.username}</DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="role">Role</Label>
-                                <Select value={newRole} onValueChange={(v) => v && setNewRole(v)}>
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="admin">Admin</SelectItem>
-                                    <SelectItem value="member">Member</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <Button
-                                onClick={() =>
-                                  updateMutation.mutate({ userId: m.user_id, role: newRole })
-                                }
-                                disabled={newRole === m.role || updateMutation.isPending}
-                                className="w-full"
-                              >
-                                Save
-                              </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            if (confirm(`Remove ${m.username} from organization?`)) {
-                              removeMutation.mutate(m.user_id);
-                            }
-                          }}
-                          disabled={m.role === "owner"}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {creating && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Create Role</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RoleForm
+              onSave={(data) => createMutation.mutate(data)}
+              onCancel={() => setCreating(false)}
+              saving={createMutation.isPending}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {editingRole && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit Role: {editingRole.name}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RoleForm
+              role={editingRole}
+              onSave={(data) => updateMutation.mutate({ id: editingRole.id, data })}
+              onCancel={() => setEditingRole(null)}
+              saving={updateMutation.isPending}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="space-y-3">
+        {roles?.map((role) => (
+          <Card key={role.id}>
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <span className="font-semibold">{role.name}</span>
+                    {role.is_system && (
+                      <Badge variant="secondary" className="text-xs">System</Badge>
+                    )}
+                    <Badge variant="outline" className="text-xs">
+                      {role.member_count} member{role.member_count !== 1 ? "s" : ""}
+                    </Badge>
+                  </div>
+                  {role.description && (
+                    <p className="text-sm text-muted-foreground">{role.description}</p>
+                  )}
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {role.permissions.map((perm) => (
+                      <Badge key={perm} variant="outline" className="text-xs">
+                        {PERMISSION_LABELS[perm] ?? perm}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingRole(role)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  {!role.is_system && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Delete role "${role.name}"?`)) {
+                          deleteMutation.mutate(role.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {roles?.length === 0 && (
+          <p className="text-center text-muted-foreground py-8">No roles defined.</p>
+        )}
+      </div>
     </div>
   );
 }

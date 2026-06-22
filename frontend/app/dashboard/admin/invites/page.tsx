@@ -51,6 +51,11 @@ export default function AdminInvitesPage() {
     queryFn: () => api.listInvitations(),
   });
 
+  const { data: roles } = useQuery({
+    queryKey: ["org-roles"],
+    queryFn: () => api.listOrgRoles(),
+  });
+
   const inviteMutation = useMutation({
     mutationFn: (body: InviteRequest) => api.inviteMember(body),
     onSuccess: () => {
@@ -98,8 +103,9 @@ export default function AdminInvitesPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="member">Member</SelectItem>
+                    {roles?.map((r) => (
+                      <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

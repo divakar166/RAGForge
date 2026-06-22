@@ -45,9 +45,20 @@ def observe(name: str | None = None, **kwargs: Any) -> Any:
     if not settings.LANGFUSE_ENABLED:
         return lambda fn: fn
 
-    from langfuse.decorators import observe as langfuse_observe
+    from langfuse import observe as langfuse_observe
 
     return langfuse_observe(name=name, **kwargs)
+
+
+def get_current_trace_id() -> str | None:
+    """Get the current Langfuse trace ID from the active client."""
+    lf = get_langfuse()
+    if lf is None:
+        return None
+    try:
+        return lf.get_current_trace_id()
+    except Exception:
+        return None
 
 
 def score_trace(trace_id: str, name: str, value: float | int | bool, data_type: str = "NUMERIC") -> None:
@@ -56,7 +67,7 @@ def score_trace(trace_id: str, name: str, value: float | int | bool, data_type: 
     if lf is None:
         return
     try:
-        lf.score(
+        lf.create_score(
             trace_id=trace_id,
             name=name,
             value=value,

@@ -6,6 +6,110 @@ from supabase import AsyncClient
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ROLES = [
+    {
+        "name": "owner",
+        "description": "Organization owner with full access",
+        "permissions": [
+            "documents:create", "documents:read", "documents:update", "documents:delete",
+            "documents:download", "search:query", "collections:manage", "members:manage",
+            "invites:manage", "audit:view", "evaluate:run", "roles:manage", "settings:manage",
+        ],
+        "is_system": True,
+    },
+    {
+        "name": "admin",
+        "description": "Full org access",
+        "permissions": [
+            "documents:create", "documents:read", "documents:update", "documents:delete",
+            "documents:download", "search:query", "collections:manage", "members:manage",
+            "invites:manage", "audit:view", "evaluate:run", "roles:manage", "settings:manage",
+        ],
+        "is_system": True,
+    },
+    {
+        "name": "member",
+        "description": "Can manage documents and search",
+        "permissions": [
+            "documents:create", "documents:read", "documents:update", "documents:delete",
+            "documents:download", "search:query", "collections:manage",
+        ],
+        "is_system": True,
+    },
+    {
+        "name": "viewer",
+        "description": "Read-only access",
+        "permissions": ["documents:read", "documents:download", "search:query"],
+        "is_system": True,
+    },
+]
+
+
+async def seed_default_roles(supabase: AsyncClient, org_id: str):
+    for role in DEFAULT_ROLES:
+        existing = await supabase.table("organization_roles").select("id").eq("organization_id", org_id).eq("name", role["name"]).limit(1).execute()
+        if existing.data:
+            continue
+        await supabase.table("organization_roles").insert({
+            "organization_id": org_id,
+            "name": role["name"],
+            "description": role["description"],
+            "permissions": role["permissions"],
+            "is_system": role["is_system"],
+        }).execute()
+
+
+async def get_org_roles(supabase: AsyncClient, org_id: str) -> list[dict]:
+    roles_resp = await supabase.table("organization_roles").select("*").eq("organization_id", org_id).order("name").execute()
+    roles = roles_resp.data or []
+    for r in roles:
+        member_count = await supabase.table("organization_members").select("id", count="exact").eq("organization_id", org_id).eq("role", r["name"]).execute()
+        r["member_count"] = member_count.count if hasattr(member_count, 'count') else 0
+    return roles
+
+
+async def get_org_role(supabase: AsyncClient, org_id: str, role_id: str) -> dict | None:
+    resp = await supabase.table("organization_roles").select("*").eq("id", role_id).eq("organization_id", org_id).single().execute()
+    return resp.data
+
+
+async def create_org_role(supabase: AsyncClient, org_id: str, name: str, description: str | None, permissions: list[str]) -> dict | None:
+    existing = await supabase.table("organization_roles").select("id").eq("organization_id", org_id).eq("name", name).limit(1).execute()
+    if existing.data:
+        return None
+    resp = await supabase.table("organization_roles").insert({
+        "organization_id": org_id,
+        "name": name,
+        "description": description,
+        "permissions": permissions,
+        "is_system": False,
+    }).select("*").execute()
+    return resp.data[0] if resp.data else None
+
+
+async def update_org_role(supabase: AsyncClient, org_id: str, role_id: str, data: dict) -> dict | None:
+    role = await get_org_role(supabase, org_id, role_id)
+    if not role or role.get("is_system"):
+        return None
+    update_data = {k: v for k, v in data.items() if v is not None}
+    if not update_data:
+        return role
+    resp = await supabase.table("organization_roles").update(update_data).eq("id", role_id).eq("organization_id", org_id).select("*").execute()
+    return resp.data[0] if resp.data else None
+
+
+async def delete_org_role(supabase: AsyncClient, org_id: str, role_id: str) -> bool:
+    role = await get_org_role(supabase, org_id, role_id)
+    if not role or role.get("is_system"):
+        return False
+    await supabase.table("organization_roles").delete().eq("id", role_id).eq("organization_id", org_id).execute()
+    return True
+
+
+async def validate_role_name(supabase: AsyncClient, org_id: str, role_name: str) -> bool:
+    resp = await supabase.table("organization_roles").select("id").eq("organization_id", org_id).eq("name", role_name).limit(1).execute()
+    return bool(resp.data)
+
 
 async def create_organization(supabase: AsyncClient, name: str, slug: str, owner_id: str) -> dict | None:
     existing = await supabase.table("organizations").select("id").eq("slug", slug).limit(1).execute()

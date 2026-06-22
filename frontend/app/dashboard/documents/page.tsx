@@ -23,6 +23,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -35,6 +42,16 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "@/lib/format";
 import { useRouter } from "next/navigation";
 
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const CLASS_COLORS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  public: "default",
+  internal: "secondary",
+  confidential: "destructive",
+};
+
 function statusBadge(status: string) {
   const variants: Record<string, "default" | "secondary" | "destructive"> = {
     indexed: "default",
@@ -45,27 +62,44 @@ function statusBadge(status: string) {
   return <Badge variant={variants[status] ?? "secondary"}>{status}</Badge>;
 }
 
+function classificationBadge(cls: string) {
+  return (
+    <Badge variant={CLASS_COLORS[cls] ?? "outline"}>
+      {capitalize(cls)}
+    </Badge>
+  );
+}
+
 export default function DocumentsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [classification, setClassification] = useState("internal");
+  const [collectionId, setCollectionId] = useState("none");
 
   const { data, isLoading } = useQuery({
     queryKey: ["documents"],
     queryFn: () => api.listDocuments(1, 100),
   });
 
+  const { data: collections } = useQuery({
+    queryKey: ["collections"],
+    queryFn: () => api.listCollections(),
+  });
+
   const uploadMutation = useMutation({
     mutationFn: () => {
       if (!file) throw new Error("No file selected");
-      return api.uploadDocument(file);
+      return api.uploadDocument(file, classification, collectionId === "none" ? undefined : collectionId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       toast.success("Document uploaded");
       setUploadOpen(false);
       setFile(null);
+      setClassification("internal");
+      setCollectionId("none");
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -106,6 +140,33 @@ export default function DocumentsPage() {
                   accept=".pdf,.docx,.txt,.md,.html"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="classification">Classification</Label>
+                <Select value={classification} onValueChange={(v) => v && setClassification(v)}>
+                  <SelectTrigger id="classification">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public</SelectItem>
+                    <SelectItem value="internal">Internal</SelectItem>
+                    <SelectItem value="confidential">Confidential</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="collection">Collection</Label>
+                <Select value={collectionId} onValueChange={(v) => v && setCollectionId(v)}>
+                  <SelectTrigger id="collection">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {collections?.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 onClick={() => uploadMutation.mutate()}
                 disabled={!file || uploadMutation.isPending}
@@ -137,13 +198,13 @@ export default function DocumentsPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Access</TableHead>
-                  <TableHead>Uploaded</TableHead>
-                  <TableHead className="w-16" />
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Classification</TableHead>
+                    <TableHead>Uploaded</TableHead>
+                    <TableHead className="w-16" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -156,15 +217,7 @@ export default function DocumentsPage() {
                     <TableCell className="font-medium">{doc.filename}</TableCell>
                     <TableCell>{doc.file_type}</TableCell>
                     <TableCell>{statusBadge(doc.status)}</TableCell>
-                    <TableCell>
-                      {doc.allowed_roles?.length
-                        ? doc.allowed_roles.map((r) => (
-                            <Badge key={r} variant="secondary" className="mr-1 capitalize">
-                              {r}
-                            </Badge>
-                          ))
-                        : <Badge variant="outline">None</Badge>}
-                    </TableCell>
+                    <TableCell>{classificationBadge(doc.classification)}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {formatDistanceToNow(doc.created_at)}
                     </TableCell>

@@ -11,6 +11,16 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+CLASSIFICATION_ROLE_MAP: dict[str, list[str]] = {
+    "public": ["viewer", "member", "admin", "owner"],
+    "internal": ["member", "admin", "owner"],
+    "confidential": ["admin", "owner"],
+}
+
+
+def allowed_roles_for_classification(classification: str) -> list[str]:
+    return CLASSIFICATION_ROLE_MAP.get(classification, ["member", "admin", "owner"])
+
 
 class QdrantStore:
     """Per-organization Qdrant store, backed by Qdrant Cloud.
@@ -71,7 +81,7 @@ class QdrantStore:
             )
             logger.info("Created Qdrant collection '%s'", self.collection)
 
-            for field_name in ("document_id", "uploaded_by_id", "allowed_roles", "collection_id"):
+            for field_name in ("document_id", "uploaded_by_id", "allowed_roles", "collection_id", "classification"):
                 self.client.create_payload_index(
                     collection_name=self.collection,
                     field_name=field_name,

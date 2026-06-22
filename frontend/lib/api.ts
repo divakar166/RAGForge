@@ -15,6 +15,7 @@ import type {
   LoginBody,
   Member,
   MemberUpdate,
+  OrgRole,
   PaginatedResponse,
   RAGResponse,
   RegisterBody,
@@ -24,7 +25,8 @@ import type {
   User,
 } from "./types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
 class ApiClient {
   private accessToken: string | null = null;
@@ -171,7 +173,7 @@ class ApiClient {
     });
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────
+  // Auth
 
   register(body: RegisterBody) {
     return this.post<RegisterResponse>("/auth/register", body);
@@ -195,7 +197,7 @@ class ApiClient {
     return this.get<User>("/auth/me");
   }
 
-  // ── Users (admin, non-org-scoped) ─────────────────────────────────
+  // Users (admin, non-org-scoped)
 
   listUsers() {
     return this.get<User[]>("/users");
@@ -205,22 +207,27 @@ class ApiClient {
     return this.get<User>(`/users/${id}`);
   }
 
-  updateUser(id: string, data: { is_active?: boolean; is_superuser?: boolean }) {
+  updateUser(
+    id: string,
+    data: { is_active?: boolean; is_superuser?: boolean },
+  ) {
     return this.patch<{ detail: string }>(`/users/${id}`, data);
   }
 
-  // ── Org-scoped helpers ────────────────────────────────────────────
+  // Org-scoped helpers
 
   private orgPath(path: string): string {
     if (!this._orgId) throw new Error("No active organization");
     return `/orgs/${this._orgId}${path}`;
   }
 
-  // ── Documents ─────────────────────────────────────────────────────
+  // Documents
 
-  uploadDocument(file: File) {
+  uploadDocument(file: File, classification?: string, collectionId?: string) {
     const fd = new FormData();
     fd.append("file", file);
+    if (classification) fd.append("classification", classification);
+    if (collectionId) fd.append("collection_id", collectionId);
     return this.upload<Document>(`${this.orgPath("/documents/upload")}`, fd);
   }
 
@@ -239,17 +246,37 @@ class ApiClient {
   }
 
   setDocumentAccess(id: string, body: DocumentAccessUpdate) {
-    return this.post<{ detail: string }>(this.orgPath(`/documents/${id}/access`), body);
+    return this.post<{ detail: string }>(
+      this.orgPath(`/documents/${id}/access`),
+      body,
+    );
   }
 
-  // ── Search ────────────────────────────────────────────────────────
+  updateDocument(
+    id: string,
+    body: {
+      collection_id?: string | null;
+      title?: string;
+      classification?: string;
+    },
+  ) {
+    return this.patch<Document>(this.orgPath(`/documents/${id}`), body);
+  }
+
+  // Search
 
   search(query: string, topK = 5) {
-    return this.post<SearchResponse>(this.orgPath("/search/query"), { query, top_k: topK });
+    return this.post<SearchResponse>(this.orgPath("/search/query"), {
+      query,
+      top_k: topK,
+    });
   }
 
   ask(query: string, topK = 5) {
-    return this.post<RAGResponse>(this.orgPath("/search/ask"), { query, top_k: topK });
+    return this.post<RAGResponse>(this.orgPath("/search/ask"), {
+      query,
+      top_k: topK,
+    });
   }
 
   getSearchHistory() {
@@ -260,21 +287,24 @@ class ApiClient {
     return this.post<void>(this.orgPath("/search/feedback"), body);
   }
 
-  // ── Members ───────────────────────────────────────────────────────
+  // Members
 
   listMembers() {
     return this.get<Member[]>(this.orgPath("/members"));
   }
 
   updateMember(userId: string, data: MemberUpdate) {
-    return this.patch<{ detail: string }>(this.orgPath(`/members/${userId}`), data);
+    return this.patch<{ detail: string }>(
+      this.orgPath(`/members/${userId}`),
+      data,
+    );
   }
 
   removeMember(userId: string) {
     return this.delete<{ detail: string }>(this.orgPath(`/members/${userId}`));
   }
 
-  // ── Invitations ───────────────────────────────────────────────────
+  // Invitations
 
   inviteMember(body: InviteRequest) {
     return this.post<Invitation>(this.orgPath("/invites"), body);
@@ -284,13 +314,15 @@ class ApiClient {
     return this.get<Invitation[]>(this.orgPath("/invites"));
   }
 
-  // ── Audit ─────────────────────────────────────────────────────────
+  // Audit
 
   getAuditLogs(page = 1, perPage = 50) {
-    return this.get<unknown[]>(`${this.orgPath("/audit")}?page=${page}&per_page=${perPage}`);
+    return this.get<unknown[]>(
+      `${this.orgPath("/audit")}?page=${page}&per_page=${perPage}`,
+    );
   }
 
-  // ── Evaluation ────────────────────────────────────────────────────
+  // Evaluation
 
   runEvaluation() {
     return this.post<EvaluationResult[]>("/evaluate/run");
@@ -300,7 +332,7 @@ class ApiClient {
     return this.get<{ name: string; size: number }>("/evaluate/dataset");
   }
 
-  // ── Collections ───────────────────────────────────────────────────
+  // Collections
 
   listCollections() {
     return this.get<Collection[]>(this.orgPath("/collections"));
@@ -318,7 +350,7 @@ class ApiClient {
     return this.delete<void>(this.orgPath(`/collections/${id}`));
   }
 
-  // ── Conversations ─────────────────────────────────────────────────
+  //  Conversations
 
   listConversations() {
     return this.get<ConversationThread[]>(this.orgPath("/conversations"));
@@ -344,31 +376,72 @@ class ApiClient {
     });
   }
 
-  // ── Document Download ─────────────────────────────────────────────
+  // Document Download
 
   async downloadDocument(id: string): Promise<Blob> {
     const headers: Record<string, string> = {};
     if (this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
-    const res = await fetch(`${BASE_URL}${this.orgPath(`/documents/${id}/download`)}`, { headers });
+    const res = await fetch(
+      `${BASE_URL}${this.orgPath(`/documents/${id}/download`)}`,
+      { headers },
+    );
     if (!res.ok) throw new Error("Download failed");
     return res.blob();
   }
 
-  // ── Health ────────────────────────────────────────────────────────
+  // Health
 
   health() {
     return this.get<{ status: string }>("/health");
   }
 
-  // ── Invites ───────────────────────────────────────────────────────
+  // Org Roles
+
+  listOrgRoles() {
+    return this.get<OrgRole[]>(this.orgPath("/roles"));
+  }
+
+  getOrgRole(id: string) {
+    return this.get<OrgRole>(this.orgPath(`/roles/${id}`));
+  }
+
+  createOrgRole(body: {
+    name: string;
+    description?: string | null;
+    permissions: string[];
+  }) {
+    return this.post<OrgRole>(this.orgPath("/roles"), body);
+  }
+
+  updateOrgRole(
+    id: string,
+    body: {
+      name?: string;
+      description?: string | null;
+      permissions?: string[];
+    },
+  ) {
+    return this.patch<OrgRole>(this.orgPath(`/roles/${id}`), body);
+  }
+
+  deleteOrgRole(id: string) {
+    return this.delete<{ detail: string }>(this.orgPath(`/roles/${id}`));
+  }
+
+  // Invites
 
   verifyInvite(token: string) {
     return this.get<InviteVerifyResponse>(`/invites/verify/${token}`);
   }
 
-  registerWithInvite(body: { invitation_token: string; email: string; username: string; password: string }) {
+  registerWithInvite(body: {
+    invitation_token: string;
+    email: string;
+    username: string;
+    password: string;
+  }) {
     return this.post<RegisterResponse>("/auth/register-with-invite", body);
   }
 }

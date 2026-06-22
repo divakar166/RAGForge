@@ -1,37 +1,310 @@
 [
   {
-    "question": "What is RAGForge and what does it do?",
+    "question": "What are the key design principles of the FastAPI architecture according to the engineering guide?",
     "answer": "",
     "contexts": [],
-    "ground_truth": "RAGForge is a production-grade RAG system with RBAC for resume showcase.",
-    "metadata": {"category": "general"}
+    "ground_truth": "The FastAPI architecture guide emphasizes dependency injection, async endpoints, Pydantic v2 schemas, and layered service design.",
+    "metadata": {"category": "engineering"}
   },
   {
-    "question": "What vector database does RAGForge use?",
+    "question": "What monitoring and observability tools are recommended for the RAG system?",
     "answer": "",
     "contexts": [],
-    "ground_truth": "Qdrant is used as the vector database, supporting both dense and sparse vectors.",
-    "metadata": {"category": "architecture"}
+    "ground_truth": "The observability guide recommends OpenTelemetry for tracing, Prometheus for metrics, Grafana for dashboards, and structured JSON logging.",
+    "metadata": {"category": "engineering"}
   },
   {
-    "question": "How does RAGForge handle access control?",
+    "question": "What is the API versioning policy for the platform?",
     "answer": "",
     "contexts": [],
-    "ground_truth": "RAGForge uses defense-in-depth RBAC with pre-filter at Qdrant, post-filter at service layer, and full audit trail.",
-    "metadata": {"category": "security"}
+    "ground_truth": "The API versioning policy uses URL-based versioning (v1, v2) with a minimum depreciation notice of 6 months and backward compatibility within a major version.",
+    "metadata": {"category": "engineering"}
   },
   {
-    "question": "What chunking strategies are available?",
+    "question": "How does the RAG system architecture handle dense and sparse vector retrieval?",
     "answer": "",
     "contexts": [],
-    "ground_truth": "RAGForge supports recursive chunking (structure-aware) and semantic chunking (embedding-similarity breakpoints).",
-    "metadata": {"category": "rag"}
+    "ground_truth": "The RAG architecture uses Qdrant for hybrid search with dense embeddings from TEI and sparse vectors from rank_bm25, fused via Reciprocal Rank Fusion.",
+    "metadata": {"category": "engineering"}
   },
   {
-    "question": "How does RAGForge perform hybrid search?",
+    "question": "What are the CI/CD pipeline stages for the platform?",
     "answer": "",
     "contexts": [],
-    "ground_truth": "RAGForge uses dense embeddings from TEI and sparse vectors from rank_bm25, fused with Reciprocal Rank Fusion (RRF).",
-    "metadata": {"category": "rag"}
+    "ground_truth": "The CI/CD pipeline includes linting, type checking, unit tests, integration tests, RAGAS evaluation gate, container build, staging deploy, and production deploy with gated approvals.",
+    "metadata": {"category": "engineering"}
+  },
+  {
+    "question": "How is Redis used in the RAG system architecture?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "Redis serves as the Celery message broker, result backend, and sliding-window rate limiter for API endpoints.",
+    "metadata": {"category": "engineering"}
+  },
+  {
+    "question": "What are the Kubernetes deployment requirements for the application?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Kubernetes deployment requires separate services for the FastAPI app, Celery worker, and optional sidecars, with resource limits of at least 2 CPU and 4GB RAM per pod, and readiness/liveness probes on /health.",
+    "metadata": {"category": "engineering"}
+  },
+  {
+    "question": "What are the best practices for vector search according to the engineering guides?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "Vector search best practices include using hybrid search (dense + sparse), RRF fusion, pre-filtering for RBAC, payload indexing for fast filtering, and periodic optimization of HNSW index parameters.",
+    "metadata": {"category": "engineering"}
+  },
+  {
+    "question": "How does the Celery worker handle document processing tasks?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Celery background jobs system processes documents by parsing with pdfplumber/python-docx, chunking, embedding via TEI, computing BM25 sparse vectors, and upserting to Qdrant.",
+    "metadata": {"category": "engineering"}
+  },
+  {
+    "question": "What is the Qdrant deployment strategy for production?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Qdrant deployment strategy uses a 3-node cluster with replication factor 2, WAL-based persistence, nightly snapshot backups to S3, and separate collections per tenant for data isolation.",
+    "metadata": {"category": "engineering"}
+  },
+  {
+    "question": "What is the product launch plan for Atlas GA?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Atlas GA launch plan targets a phased rollout starting with beta customers in Q2 2026, general availability in Q3 2026, with a marketing campaign focused on enterprise AI readiness.",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What are the key findings from the Q1 2026 customer feedback analysis?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Q1 2026 customer feedback analysis shows that response latency and citation accuracy are top concerns, with 72% of enterprise customers requesting faster query times and 65% wanting more precise source attribution.",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What are the main customer segments identified in the segmentation analysis?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The customer segmentation identifies three primary segments: enterprise (500+ employees, compliance-heavy), mid-market (50-500 employees, feature-driven), and SMB (under 50 employees, price-sensitive).",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What does the competitive analysis reveal about key competitors?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The competitive analysis identifies three main competitors: Competitor A (strong in search accuracy but weak in RBAC), Competitor B (good UI but no hybrid search), and Competitor C (low-cost but limited scalability).",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What is the pricing strategy for 2026?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The 2026 pricing strategy introduces a usage-based tier (pay-per-query) alongside existing flat-rate tiers, with enterprise custom pricing requiring at least $2,000/month commitment.",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What is the feature prioritization framework used by the product team?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The feature prioritization framework uses a weighted scoring model based on customer impact (40%), development effort (25%), strategic alignment (20%), and revenue potential (15%).",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What is the Q3 2026 product roadmap?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Q3 2026 roadmap includes Atlas GA launch, real-time document collaboration, advanced analytics dashboard, and integration with major enterprise identity providers.",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What are the customer retention strategies for 2026?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The retention strategy includes a proactive health scoring system, quarterly business reviews for top-tier accounts, a customer success playbook, and a churn prediction model based on usage patterns.",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What does the Q1 2026 analytics review say about user engagement?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Q1 2026 analytics review shows a 23% increase in daily active users, with average session duration of 14 minutes and a 91% retention rate for weekly active users.",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What are the key market research findings for 2026?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The market research identifies a $4.2B total addressable market for enterprise RAG solutions, growing at 34% CAGR, with the strongest demand in financial services (28% share) and healthcare (22% share).",
+    "metadata": {"category": "product"}
+  },
+  {
+    "question": "What was the nature of the security incident reported in March 2026?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The March 2026 security incident involved unauthorized API key access to the staging environment, exposing customer metadata for approximately 48 hours before detection and remediation.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What were the key findings of the Q1 2026 internal audit?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Q1 2026 audit found three high-severity issues: unpatched Redis vulnerability, missing encryption at rest for document storage, and inadequate session timeout policies.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What were the key decisions from the Q1 2026 Board meeting?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Q1 2026 Board approved the Atlas GA budget of $2.8M, authorized acquisition discussions with SearchAI at a valuation not exceeding $45M, and approved the executive compensation plan.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What is the budget forecast for 2027?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The 2027 budget forecast projects $18.5M revenue with $12.2M operating expenses, targeting a 34% EBITDA margin, with the largest cost driver being cloud infrastructure at $4.1M.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What is the status of the SearchAI acquisition discussions?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The acquisition discussions with SearchAI are in due diligence phase with a proposed valuation of $35-45M, and potential close expected by end of Q3 2026.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What compliance issues were found in the vendor investigation?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The compliance investigation found that a data processing vendor failed SOC 2 Type II audit, lacked GDPR-compliant data deletion procedures, and had two unresolved data breach notifications from Q4 2025.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What are the employee salary bands for 2026?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The salary bands for 2026 are: Software Engineer I $90-120K, Software Engineer II $120-155K, Senior Engineer $155-195K, Staff Engineer $195-240K, with a 4-6% merit increase pool.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What is included in the executive compensation plan?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The executive compensation plan includes base salary, annual bonus target of 40-60% of base, long-term equity incentives with 4-year vesting, and change-in-control provisions approved by the Board.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What are the key findings of the infrastructure risk assessment?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The infrastructure risk assessment identifies single-region deployment as the top risk (critical), followed by insufficient DDoS protection (high), and lack of automated disaster recovery testing (high).",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "What is the status of strategic partnership negotiations?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The strategic partnership negotiations are in progress with two cloud providers, with a preferred partner selected for an exclusive AI infrastructure deal expected to save $1.2M annually.",
+    "metadata": {"category": "confidential"}
+  },
+  {
+    "question": "Compare the budget forecast and the executive compensation plan — what percentage of total operating expenses does the executive compensation represent?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The Board meeting minutes show the executive compensation plan was approved at the same meeting where the 2027 budget forecast was reviewed. Cross-referencing both documents would require extracting the total executive compensation pool from the plan and comparing to the $12.2M operating expense figure.",
+    "metadata": {"category": "multi-hop"}
+  },
+  {
+    "question": "How did the Q1 2026 audit findings lead to the security incident in March 2026, and what remediation was implemented?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The internal audit identified a missing Redis security patch (high severity), and the security incident involved unauthorized API key access. The incident report notes remediation included key rotation, Redis patch application, and enhanced access logging.",
+    "metadata": {"category": "multi-hop"}
+  },
+  {
+    "question": "Given the market research findings and the product roadmap, what strategic rationale supports the Atlas GA launch timing?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The market research shows 34% CAGR in the enterprise RAG market with strongest demand in financial services and healthcare. The Atlas GA launch is planned for Q3 2026, aligning with the growing market opportunity and incorporating feedback from the Q1 2026 customer feedback analysis.",
+    "metadata": {"category": "multi-hop"}
+  },
+  {
+    "question": "What is the relationship between the infrastructure risk assessment findings and the planned Q3 2026 product roadmap features?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The infrastructure risk assessment identifies single-region deployment as critical risk, while the Q3 2026 roadmap includes enterprise identity provider integration. Multi-region deployment is a prerequisite for enterprise customers requiring high availability, yet it is not explicitly in the Q3 roadmap.",
+    "metadata": {"category": "multi-hop"}
+  },
+  {
+    "question": "How does the customer feedback from Q1 2026 align with the feature prioritization framework scores for the Q3 2026 roadmap items?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "Customer feedback shows response latency and citation accuracy as top concerns. The feature prioritization framework weights customer impact at 40%. The Q3 roadmap includes Atlas GA and advanced analytics dashboard, but does not explicitly prioritize latency improvements, suggesting a gap between customer feedback and roadmap priorities.",
+    "metadata": {"category": "multi-hop"}
+  },
+  {
+    "question": "What is the planned Atlas GA release date?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "I cannot find sufficient information in the provided documents to answer this question.",
+    "metadata": {"category": "security", "expect_no_answer": true}
+  },
+  {
+    "question": "What is the CEO's email address?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "I cannot find sufficient information in the provided documents to answer this question.",
+    "metadata": {"category": "security", "expect_no_answer": true}
+  },
+  {
+    "question": "What are the database connection credentials for production?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "I cannot find sufficient information in the provided documents to answer this question.",
+    "metadata": {"category": "security", "expect_no_answer": true}
+  },
+  {
+    "question": "What is the K8s cluster admin password?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "I cannot find sufficient information in the provided documents to answer this question.",
+    "metadata": {"category": "security", "expect_no_answer": true}
+  },
+  {
+    "question": "What employee was terminated for performance issues?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "I cannot find sufficient information in the provided documents to answer this question.",
+    "metadata": {"category": "security", "expect_no_answer": true}
+  },
+  {
+    "question": "Which documents discuss the SearchAI acquisition?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The SearchAI acquisition is discussed in the board meeting minutes (confidential), the acquisition discussions document (confidential), and the strategic partnership negotiations document (confidential).",
+    "metadata": {"category": "cross-referencing"}
+  },
+  {
+    "question": "Compare the engineering and product views on the Atlas launch — do they agree on the timeline?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The product launch plan targets Q2-Q3 2026 for Atlas GA. The engineering architecture for RAG does not mention Atlas specifically. The K8s deployment guide and CI/CD pipeline standards support the timeline but do not confirm a specific date. Cross-referencing product and engineering docs, there is alignment on Q3 2026 as the target.",
+    "metadata": {"category": "cross-referencing"}
+  },
+  {
+    "question": "Do the salary bands in the confidential document align with the budget forecast for headcount costs?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The salary bands document lists ranges for engineering roles, while the budget forecast shows total operating expenses of $12.2M. Without headcount numbers in the salary document, direct verification of alignment is not possible.",
+    "metadata": {"category": "cross-referencing"}
+  },
+  {
+    "question": "What is the difference between the security measures described in the architecture guide and the actual vulnerabilities found in the audit?",
+    "answer": "",
+    "contexts": [],
+    "ground_truth": "The architecture guide describes encryption at rest, RBAC filtering, and audit logging as security measures. However, the internal audit found missing encryption at rest for document storage and inadequate session timeout policies, indicating gaps between architectural design and implementation.",
+    "metadata": {"category": "cross-referencing"}
   }
 ]

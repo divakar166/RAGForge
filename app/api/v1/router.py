@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, evaluate, invites, roles, users
+from app.api.v1.endpoints import auth, evaluate, invites, users
 from app.api.v1.endpoints.orgs import (
     audit,
     collections,
@@ -8,6 +8,7 @@ from app.api.v1.endpoints.orgs import (
     documents,
     invites as org_invites,
     members,
+    roles as org_roles,
     search,
 )
 from app.api.v1.endpoints.orgs import (
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/api/v1")
 router.include_router(auth.router)
 router.include_router(invites.router)
 router.include_router(users.router)
-router.include_router(roles.router)
+
 router.include_router(evaluate.router)
 
 # Org-scoped endpoints
@@ -29,6 +30,7 @@ orgs_router.include_router(collections.router)
 orgs_router.include_router(conversations.router)
 orgs_router.include_router(documents.router)
 orgs_router.include_router(search.router)
+orgs_router.include_router(org_roles.router)
 orgs_router.include_router(members.router)
 orgs_router.include_router(org_invites.router)
 orgs_router.include_router(audit.router)

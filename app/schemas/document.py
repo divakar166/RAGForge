@@ -10,6 +10,7 @@ class DocumentResponse(BaseModel):
     file_type: str
     file_size: int
     status: str
+    classification: str = "internal"
     allowed_roles: list[str] = ["member"]
     uploaded_by_id: str
     organization_id: str
@@ -21,6 +22,12 @@ class DocumentResponse(BaseModel):
 
 class DocumentAccessRequest(BaseModel):
     allowed_roles: list[str] | None = None
+
+
+class DocumentUpdateRequest(BaseModel):
+    collection_id: str | None = None
+    title: str | None = None
+    classification: str | None = None
 
 
 class PaginatedDocumentResponse(BaseModel):

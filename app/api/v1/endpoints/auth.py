@@ -15,7 +15,7 @@ from app.schemas.auth import (
 from app.services import auth as auth_service
 from app.services.audit import log_action
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"]) ; 
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -75,7 +75,7 @@ async def login(req: LoginRequest, supabase: AsyncClient = Depends(get_supabase)
     result = await auth_service.login(supabase, username, req.password)
     if not result:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    await log_action(supabase, None, "auth:login", ip_address=request.client.host if request else None)
+    await log_action(supabase, result.get("user_id"), "auth:login", ip_address=request.client.host if request else None)
     return TokenResponse(**result)
 
 

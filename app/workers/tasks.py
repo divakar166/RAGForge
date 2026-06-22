@@ -1,6 +1,7 @@
 """Celery tasks for async document processing — sync Supabase + Qdrant Cloud inference + BM25 sparse."""
 
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -12,7 +13,7 @@ from app.db.supabase import get_sync_supabase
 from app.rag.chunking.pipeline import ChunkingPipeline
 from app.rag.parser import parse_document
 from app.rag.sparse import BM25SparseEncoder
-from app.rag.vector_store import QdrantStore
+from app.rag.vector_store import QdrantStore, allowed_roles_for_classification
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,13 @@ def process_document(self, document_id: str, organization_id: str = "") -> dict[
 
         supabase.table("documents").update({"status": "processing"}).eq("id", document_id).execute()
 
-        text = parse_document(doc["file_path"])
+        file_path = doc["file_path"]
+        if not os.path.isabs(file_path):
+            if file_path.startswith("./"):
+                file_path = os.path.abspath(file_path)
+            else:
+                file_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, file_path))
+        text = parse_document(file_path)
         logger.info("Parsed document %s: %d chars", document_id, len(text))
 
         if not text.strip():
@@ -57,6 +64,7 @@ def process_document(self, document_id: str, organization_id: str = "") -> dict[
             sparse_encoder = _get_sparse_encoder([c.content for c in chunks])
 
         for i, chunk in enumerate(chunks):
+            classification = doc.get("classification", "internal")
             payload = {
                 "document_id": document_id,
                 "chunk_index": chunk.index,
@@ -65,7 +73,8 @@ def process_document(self, document_id: str, organization_id: str = "") -> dict[
                 "strategy": chunk.strategy,
                 "content": chunk.content,
                 "uploaded_by_id": doc["uploaded_by_id"],
-                "allowed_roles": doc.get("allowed_roles", ["member"]),
+                "classification": classification,
+                "allowed_roles": doc.get("allowed_roles") or allowed_roles_for_classification(classification),
                 "collection_id": doc.get("collection_id") or "",
             }
 

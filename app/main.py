@@ -58,8 +58,9 @@ app.include_router(v1_router)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled exception: %s", exc)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    rid = getattr(request.state, "request_id", "unknown")
+    logger.exception("[%s] Unhandled exception: %s", rid, exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": rid})
 
 
 @app.get("/health")

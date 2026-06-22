@@ -15,7 +15,6 @@ uploads/
 tests/
 data/
 scripts/
-alembic/versions/*.pyc
 frontend/
 dist/
 build/
